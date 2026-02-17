@@ -1,14 +1,13 @@
 
 import React, { useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { User, Clock, HardHat, Hammer, Droplets, Zap, Paintbrush, ChevronRight, Package, X, GripVertical } from 'lucide-react';
+import { User, Clock, HardHat, Hammer, Droplets, Zap, Paintbrush, Package, X, GripVertical } from 'lucide-react';
 import { TaskPart, Assignee } from '../types';
 
 interface TaskCardProps {
   part: TaskPart;
   onEstimateChange: (taskId: string, newHours: number) => void;
   currentEstimate: number;
-  milestoneBadgeClass?: string;
   milestoneRingClass?: string;
   draggableTask?: boolean;
   dropMarkerPosition?: 'before' | 'after' | null;
@@ -51,7 +50,6 @@ const TaskCard: React.FC<TaskCardProps> = ({
   part,
   onEstimateChange,
   currentEstimate,
-  milestoneBadgeClass = 'bg-slate-100 text-slate-600 border-slate-200',
   milestoneRingClass = 'border-l-slate-300',
   draggableTask = false,
   dropMarkerPosition = null,
@@ -71,7 +69,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
   return (
     <>
     <div
-      className={`group relative rounded-md border border-slate-200 border-l-4 bg-white p-2.5 transition-colors duration-200 hover:border-slate-300 sm:p-3 ${
+      className={`group relative rounded-md border border-slate-200 border-l-4 bg-white p-2 transition-colors duration-200 hover:border-slate-300 sm:p-2.5 ${
         dropMarkerPosition ? 'ring-1 ring-slate-300' : ''
       } ${milestoneRingClass}`}
       onDragOver={onTaskDragOver}
@@ -89,9 +87,9 @@ const TaskCard: React.FC<TaskCardProps> = ({
           <div className="pointer-events-none absolute -bottom-[11px] left-1.5 h-3 w-3 rounded-full border-2 border-white bg-indigo-700 shadow-md shadow-indigo-500/40" />
         </>
       )}
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+          <div className="mb-0.5 flex flex-wrap items-center gap-1">
              {draggableTask && (
                <div
                  draggable
@@ -108,10 +106,6 @@ const TaskCard: React.FC<TaskCardProps> = ({
                  <GripVertical size={12} />
                </div>
              )}
-             <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${milestoneBadgeClass}`}>
-               {part.milestoneName}
-             </span>
-             <ChevronRight size={10} className="text-slate-300" />
              {part.totalParts > 1 && (
                <span className="px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded text-[10px] font-medium text-slate-500">
                  Del {part.partIndex} av {part.totalParts}
@@ -121,7 +115,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
           <h4 className="truncate text-sm font-semibold leading-tight text-slate-800">
             {part.taskName}
           </h4>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2 lg:gap-3">
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 lg:gap-2.5">
             <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 ${colors.text}`}>
               <span className={`inline-block h-2 w-2 rounded-full ${colors.dot}`} />
               <span className="hidden sm:inline">{getAssigneeIcon(part.assignee)}</span>
@@ -131,6 +125,11 @@ const TaskCard: React.FC<TaskCardProps> = ({
               <Clock size={12} className="opacity-50" />
               <span>{part.hoursSpent}t i dag</span>
             </div>
+            {part.partIndex > 1 && (
+              <div className="text-[11px] italic font-medium text-slate-400">
+                Fortsettelse fra {format(new Date(), 'd. MMM')}...
+              </div>
+            )}
             <button
               type="button"
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
@@ -145,7 +144,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
         </div>
 
         {/* Edit Estimate Zone (Only on the first slice of a task) */}
-        <div className="shrink-0 border-t border-slate-200 pt-2 lg:border-l lg:border-t-0 lg:pl-3 lg:pt-0">
+        <div className="shrink-0 border-t border-slate-200 pt-1.5 lg:border-l lg:border-t-0 lg:pl-2.5 lg:pt-0">
           {part.partIndex === 1 ? (
             <div className="flex flex-col gap-0.5">
               <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Total estimat</label>
@@ -160,11 +159,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 <span className="text-xs font-medium text-slate-500">timer</span>
               </div>
             </div>
-          ) : (
-            <div className="text-[11px] italic text-slate-400 font-medium">
-              Fortsettelse fra {format(new Date(), 'd. MMM')}...
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

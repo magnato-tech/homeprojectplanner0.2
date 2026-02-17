@@ -202,7 +202,7 @@ const App: React.FC = () => {
     setMilestones((prev) =>
       prev.map((milestone) =>
         milestone.id === activeMilestoneForAdd
-          ? { ...milestone, tasks: [...milestone.tasks, task] }
+          ? { ...milestone, tasks: [task, ...milestone.tasks] }
           : milestone
       )
     );
@@ -432,11 +432,31 @@ const App: React.FC = () => {
             <div className="max-w-6xl mx-auto">
               {/* The Actual Timeline with Week Groups */}
               <div className="space-y-4">
-                {(() => {
-                  let lastRenderedMilestoneId: string | null = null;
-
-                  return groupedSchedule.map((group) => {
+                {groupedSchedule.map((group) => {
                   const isCollapsed = collapsedWeeks.has(group.weekId);
+                  const milestoneWeekSummary = (() => {
+                    const summaryMap = new Map<string, { id: string; name: string; parts: number; hours: number; index: number; startDate?: Date }>();
+                    group.days.forEach((day) => {
+                      day.parts.forEach((part) => {
+                        const existing = summaryMap.get(part.milestoneId);
+                        if (existing) {
+                          existing.parts += 1;
+                          existing.hours += part.hoursSpent;
+                        } else {
+                          const milestoneMeta = milestoneById.get(part.milestoneId);
+                          summaryMap.set(part.milestoneId, {
+                            id: part.milestoneId,
+                            name: part.milestoneName,
+                            parts: 1,
+                            hours: part.hoursSpent,
+                            index: milestoneMeta?.index ?? 9999,
+                            startDate: milestoneMeta?.milestone.startDate,
+                          });
+                        }
+                      });
+                    });
+                    return Array.from(summaryMap.values()).sort((a, b) => a.index - b.index);
+                  })();
 
                   return (
                     <section key={group.weekId} className="relative">
@@ -473,6 +493,67 @@ const App: React.FC = () => {
                           </div>
                         </div>
                       </div>
+
+                      {milestoneWeekSummary.length > 0 && (
+                        <div className="mb-2 ml-4 sm:ml-5">
+                          <div className="rounded-md border border-slate-200 bg-white px-2.5 py-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                              Milepæler i uke {group.weekNumber}
+                            </p>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                              {milestoneWeekSummary.map((milestoneSummary) => {
+                                const badgeClass =
+                                  MILESTONE_THEME_BADGE[milestoneSummary.index % MILESTONE_THEME_BADGE.length];
+                                return (
+                                  <div
+                                    key={milestoneSummary.id}
+                                    className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-1.5 py-1"
+                                  >
+                                    <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badgeClass}`}>
+                                      {milestoneSummary.name}
+                                    </span>
+                                    <span className="text-[10px] font-medium text-slate-500">
+                                      {milestoneSummary.parts} deler • {milestoneSummary.hours}t
+                                    </span>
+                                    {milestoneSummary.startDate && (
+                                      <span className="text-[10px] font-medium text-slate-500">
+                                        Start: {format(milestoneSummary.startDate, 'd. MMM', { locale: nb })}
+                                      </span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveMilestoneForSort(milestoneSummary.id)}
+                                      className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-100"
+                                      title="Endre oppgaverekkefolge i milepael"
+                                    >
+                                      <GripVertical size={10} />
+                                      Rekkefolge
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openMilestoneDateDialog(milestoneSummary.id)}
+                                      className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-100"
+                                      title="Sett startdato for milepael"
+                                    >
+                                      <CalendarDays size={10} />
+                                      Dato
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openAddTaskDialog(milestoneSummary.id)}
+                                      className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 transition-all hover:scale-105 hover:border-slate-800 hover:bg-slate-800 hover:text-white"
+                                      title="Legg til oppgave i milepael"
+                                      aria-label="Legg til oppgave i milepael"
+                                    >
+                                      <Plus size={10} />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Day List */}
                       {!isCollapsed && (
@@ -514,19 +595,11 @@ const App: React.FC = () => {
 
                                 {/* Tasks for the Day */}
                                 <div className="grid grid-cols-1 gap-1.5">
-                                  {day.parts.map((part, partIdx) => {
-                                    const previousPart = day.parts[partIdx - 1];
-                                    const isNewMilestoneInsideDay =
-                                      partIdx === 0 || previousPart.milestoneId !== part.milestoneId;
-                                    const isNewMilestoneSegment =
-                                      isNewMilestoneInsideDay && lastRenderedMilestoneId !== part.milestoneId;
+                                  {day.parts.map((part) => {
                                     const milestoneMeta = milestoneById.get(part.milestoneId);
                                     const milestoneIndex = milestoneMeta?.index ?? 0;
-                                    const badgeClass =
-                                      MILESTONE_THEME_BADGE[milestoneIndex % MILESTONE_THEME_BADGE.length];
                                     const ringClass =
                                       MILESTONE_THEME_RING[milestoneIndex % MILESTONE_THEME_RING.length];
-                                    const milestoneStartDate = milestoneMeta?.milestone.startDate;
                                     const isPrimaryTaskCard = part.partIndex === 1;
                                     const dropMarkerPosition =
                                       timelineDropTarget?.taskId === part.taskId
@@ -538,65 +611,12 @@ const App: React.FC = () => {
                                       draggedTimelineTask.milestoneId === part.milestoneId &&
                                       draggedTimelineTask.taskId !== part.taskId;
 
-                                    if (isNewMilestoneSegment) {
-                                      lastRenderedMilestoneId = part.milestoneId;
-                                    }
-
                                     return (
                                       <React.Fragment key={`${part.taskId}-${part.partIndex}`}>
-                                        {isNewMilestoneSegment && (
-                                          <div className="group mb-1 flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-2 py-1">
-                                            <div className="flex items-center gap-2">
-                                              <span className={`rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badgeClass}`}>
-                                                Milepæl
-                                              </span>
-                                              <span className="text-xs font-semibold text-slate-700">
-                                                {part.milestoneName}
-                                              </span>
-                                              {milestoneStartDate && (
-                                                <span className="text-[10px] font-medium text-slate-500">
-                                                  Start: {format(milestoneStartDate, 'd. MMM', { locale: nb })}
-                                                </span>
-                                              )}
-                                            </div>
-
-                                            <div className="flex items-center gap-1">
-                                              <button
-                                                type="button"
-                                                onClick={() => setActiveMilestoneForSort(part.milestoneId)}
-                                                className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
-                                                title="Endre oppgaverekkefolge i milepael"
-                                              >
-                                                <GripVertical size={12} />
-                                                Rekkefolge
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => openMilestoneDateDialog(part.milestoneId)}
-                                                className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
-                                                title="Sett startdato for milepæl"
-                                              >
-                                                <CalendarDays size={12} />
-                                                Dato
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => openAddTaskDialog(part.milestoneId)}
-                                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 transition-all hover:scale-110 hover:border-slate-800 hover:bg-slate-800 hover:text-white"
-                                                title="Legg til oppgave i milepæl"
-                                                aria-label="Legg til oppgave i milepæl"
-                                              >
-                                                <Plus size={14} />
-                                              </button>
-                                            </div>
-                                          </div>
-                                        )}
-
                                         <TaskCard 
                                           part={part} 
                                           onEstimateChange={handleUpdateEstimate}
                                           currentEstimate={getTaskEstimate(part.taskId)}
-                                          milestoneBadgeClass={badgeClass}
                                           milestoneRingClass={ringClass}
                                           draggableTask={isPrimaryTaskCard}
                                           dropMarkerPosition={dropMarkerPosition}
@@ -637,8 +657,7 @@ const App: React.FC = () => {
                       {isCollapsed && <div className="h-2" />}
                   </section>
                 );
-              });
-                })()}
+              })}
 
               <div className="pt-1">
                 <button className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white text-slate-700 rounded-md font-medium text-sm border border-slate-300 hover:bg-slate-50 transition-colors">
@@ -717,6 +736,9 @@ const App: React.FC = () => {
                   </select>
                 </div>
               </div>
+              <p className="text-[11px] text-slate-500">
+                Ny oppgave legges inn forst i valgt milepael. Deretter kan du dra den til riktig plassering.
+              </p>
             </div>
             <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
               <button

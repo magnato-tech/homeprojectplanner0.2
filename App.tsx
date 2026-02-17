@@ -24,6 +24,43 @@ import { INITIAL_MILESTONES, DEFAULT_CAPACITIES, DEFAULT_LABOR_RATES } from './c
 import { calculateSchedule } from './services/scheduler';
 import TaskCard from './components/TaskCard';
 
+const LOCAL_STORAGE_KEY = 'home-project-planner:v1';
+
+interface PersistedAppState {
+  milestones: Milestone[];
+  config: ProjectConfig;
+  laborRates: Record<string, number>;
+  actualCosts: BudgetActuals;
+}
+
+const parseDateOrUndefined = (value: unknown): Date | undefined => {
+  if (!value || typeof value !== 'string') return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+};
+
+const parseDateOrDefault = (value: unknown, fallback: Date): Date => {
+  const parsed = parseDateOrUndefined(value);
+  return parsed ?? fallback;
+};
+
+const normalizeMilestonesFromStorage = (value: unknown): Milestone[] => {
+  if (!Array.isArray(value)) return INITIAL_MILESTONES;
+  return value.map((milestone): Milestone => {
+    const safeMilestone = (milestone ?? {}) as Milestone;
+    return {
+      ...safeMilestone,
+      startDate: parseDateOrUndefined((safeMilestone as { startDate?: unknown }).startDate),
+      tasks: Array.isArray(safeMilestone.tasks)
+        ? safeMilestone.tasks.map((task) => ({
+            ...task,
+            hardStartDate: parseDateOrUndefined((task as { hardStartDate?: unknown }).hardStartDate),
+          }))
+        : [],
+    };
+  });
+};
+
 interface WeekGroup {
   weekId: string;
   weekNumber: number;
@@ -97,6 +134,7 @@ const App: React.FC = () => {
     material: 0,
     rental: 0,
   });
+  const [isStorageHydrated, setIsStorageHydrated] = useState(false);
   const [activeMilestoneForAdd, setActiveMilestoneForAdd] = useState<string | null>(null);
   const [activeMilestoneForDate, setActiveMilestoneForDate] = useState<string | null>(null);
   const [activeMilestoneForSort, setActiveMilestoneForSort] = useState<string | null>(null);
@@ -110,6 +148,51 @@ const App: React.FC = () => {
     startDate: new Date(),
     dayCapacities: DEFAULT_CAPACITIES,
   });
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (!raw) {
+        setIsStorageHydrated(true);
+        return;
+      }
+      const parsed = JSON.parse(raw) as Partial<PersistedAppState>;
+      if (parsed.milestones) {
+        setMilestones(normalizeMilestonesFromStorage(parsed.milestones));
+      }
+      if (parsed.config) {
+        setConfig({
+          startDate: parseDateOrDefault(parsed.config.startDate, new Date()),
+          dayCapacities: parsed.config.dayCapacities ?? DEFAULT_CAPACITIES,
+        });
+      }
+      if (parsed.laborRates) {
+        setLaborRates((parsed.laborRates as Record<Assignee, number>) ?? DEFAULT_LABOR_RATES);
+      }
+      if (parsed.actualCosts) {
+        setActualCosts(parsed.actualCosts);
+      }
+    } catch {
+      // Ignore broken localStorage payload and continue with defaults.
+    } finally {
+      setIsStorageHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isStorageHydrated) return;
+    const payload: PersistedAppState = {
+      milestones,
+      config,
+      laborRates,
+      actualCosts,
+    };
+    try {
+      window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // Ignore storage quota/availability errors.
+    }
+  }, [milestones, config, laborRates, actualCosts, isStorageHydrated]);
 
   const assignees: Assignee[] = ['Meg selv', 'Snekker', 'Rørlegger', 'Elektriker', 'Maler'];
   const milestoneById = useMemo(
@@ -224,6 +307,35 @@ const App: React.FC = () => {
       }
     }));
   };
+
+  const handleResetStoredData = useCallback(() => {
+    const firstConfirm = window.confirm(
+      'Advarsel: Dette vil slette alle lagrede prosjektdata i nettleseren. Vil du fortsette?'
+    );
+    if (!firstConfirm) return;
+
+    const secondConfirm = window.confirm(
+      'Siste sjekk: Er du helt sikker på at du vil nullstille alt? Dette kan ikke angres.'
+    );
+    if (!secondConfirm) return;
+
+    setMilestones(INITIAL_MILESTONES);
+    setConfig({
+      startDate: new Date(),
+      dayCapacities: DEFAULT_CAPACITIES,
+    });
+    setLaborRates(DEFAULT_LABOR_RATES);
+    setActualCosts({
+      labor: 0,
+      material: 0,
+      rental: 0,
+    });
+    try {
+      window.localStorage.removeItem(LOCAL_STORAGE_KEY);
+    } catch {
+      // Ignore storage errors.
+    }
+  }, []);
 
   const openAddTaskDialog = (milestoneId: string) => {
     setActiveMilestoneForAdd(milestoneId);
@@ -442,6 +554,7 @@ const App: React.FC = () => {
             onUpdateCapacity={handleUpdateCapacity}
             scheduleLength={schedule.length}
             lastScheduleDate={schedule.length > 0 ? schedule[schedule.length - 1].date : null}
+            onResetStoredData={handleResetStoredData}
           />
         </div>
       </aside>

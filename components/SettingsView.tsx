@@ -2,7 +2,7 @@ import React from 'react';
 import { format } from 'date-fns';
 import { nb } from 'date-fns/locale';
 import { ProjectConfig } from '../types';
-import { Calendar, ArrowRightLeft, Activity } from 'lucide-react';
+import { Calendar, ArrowRightLeft, Activity, AlertTriangle } from 'lucide-react';
 
 interface SettingsViewProps {
   config: ProjectConfig;
@@ -10,6 +10,7 @@ interface SettingsViewProps {
   onUpdateCapacity: (day: number, hours: number) => void;
   scheduleLength: number;
   lastScheduleDate: Date | null;
+  onResetStoredData: () => void;
 }
 
 const SettingsView: React.FC<SettingsViewProps> = ({
@@ -18,6 +19,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   onUpdateCapacity,
   scheduleLength,
   lastScheduleDate,
+  onResetStoredData,
 }) => {
   const dayNames = ['Søndag', 'Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag'];
 
@@ -80,6 +82,22 @@ const SettingsView: React.FC<SettingsViewProps> = ({
             <span className="font-bold text-indigo-900">{scheduleLength} dager</span>
           </div>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+        <h4 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-800">
+          <AlertTriangle size={14} /> Fare sone
+        </h4>
+        <p className="mb-3 text-xs text-rose-700">
+          Nullstiller lagrede prosjektdata fra nettleseren. Dette kan ikke angres.
+        </p>
+        <button
+          type="button"
+          onClick={onResetStoredData}
+          className="w-full rounded-md border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+        >
+          Nullstill lagrede data
+        </button>
       </div>
     </div>
   );

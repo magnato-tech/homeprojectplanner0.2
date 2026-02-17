@@ -13,6 +13,7 @@ export const calculateSchedule = (
 ): DaySchedule[] => {
   const schedule: DaySchedule[] = [];
   let currentDate = startOfDay(config.startDate);
+  let previousMilestoneEndDate: Date | null = null;
   
   // Helper to find or create a day in the schedule
   const getOrCreateDay = (date: Date): DaySchedule => {
@@ -41,12 +42,19 @@ export const calculateSchedule = (
   };
 
   for (const milestone of milestones) {
-    // Milestone Gating: Must start at least one day after the last task of the previous milestone
-    if (schedule.length > 0) {
-      currentDate = addDays(currentDate, 1);
-    }
-    
-    currentDate = moveToNextWorkingDay(currentDate);
+    const milestoneMinStart = previousMilestoneEndDate
+      ? addDays(startOfDay(previousMilestoneEndDate), 1)
+      : startOfDay(config.startDate);
+    const milestoneRequestedStart = milestone.startDate
+      ? startOfDay(milestone.startDate)
+      : milestoneMinStart;
+    const rawMilestoneStart =
+      milestoneRequestedStart.getTime() > milestoneMinStart.getTime()
+        ? milestoneRequestedStart
+        : milestoneMinStart;
+
+    currentDate = moveToNextWorkingDay(rawMilestoneStart);
+    let milestoneLastScheduledDate: Date | null = null;
 
     for (const task of milestone.tasks) {
       let remainingTaskHours = task.estimateHours;
@@ -82,6 +90,7 @@ export const calculateSchedule = (
 
         day.parts.push(part);
         taskPartsRefs.push(part);
+        milestoneLastScheduledDate = day.date;
         
         day.remainingCapacity -= hoursToDoToday;
         remainingTaskHours -= hoursToDoToday;
@@ -96,6 +105,10 @@ export const calculateSchedule = (
       // Update total parts for the labels
       const total = taskPartsRefs.length;
       taskPartsRefs.forEach(p => p.totalParts = total);
+    }
+
+    if (milestoneLastScheduledDate) {
+      previousMilestoneEndDate = milestoneLastScheduledDate;
     }
   }
 

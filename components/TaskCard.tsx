@@ -1,13 +1,21 @@
 
 import React, { useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { User, Clock, HardHat, Hammer, Droplets, Zap, Paintbrush, ChevronRight, Package, X } from 'lucide-react';
+import { User, Clock, HardHat, Hammer, Droplets, Zap, Paintbrush, ChevronRight, Package, X, GripVertical } from 'lucide-react';
 import { TaskPart, Assignee } from '../types';
 
 interface TaskCardProps {
   part: TaskPart;
   onEstimateChange: (taskId: string, newHours: number) => void;
   currentEstimate: number;
+  milestoneBadgeClass?: string;
+  milestoneRingClass?: string;
+  draggableTask?: boolean;
+  dropMarkerPosition?: 'before' | 'after' | null;
+  onTaskDragStart?: () => void;
+  onTaskDragEnd?: () => void;
+  onTaskDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onTaskDrop?: () => void;
 }
 
 const getAssigneeColors = (assignee: Assignee) => {
@@ -39,7 +47,19 @@ const formatCurrencyNok = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
-const TaskCard: React.FC<TaskCardProps> = ({ part, onEstimateChange, currentEstimate }) => {
+const TaskCard: React.FC<TaskCardProps> = ({
+  part,
+  onEstimateChange,
+  currentEstimate,
+  milestoneBadgeClass = 'bg-slate-100 text-slate-600 border-slate-200',
+  milestoneRingClass = 'border-l-slate-300',
+  draggableTask = false,
+  dropMarkerPosition = null,
+  onTaskDragStart,
+  onTaskDragEnd,
+  onTaskDragOver,
+  onTaskDrop,
+}) => {
   const colors = getAssigneeColors(part.assignee);
   const [isEquipmentOpen, setIsEquipmentOpen] = useState(false);
   const equipment = part.equipment ?? [];
@@ -48,14 +68,47 @@ const TaskCard: React.FC<TaskCardProps> = ({ part, onEstimateChange, currentEsti
     () => equipment.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0),
     [equipment]
   );
-  
   return (
     <>
-    <div className="group relative p-2.5 sm:p-3 rounded-md border border-slate-200 bg-white transition-colors duration-200 hover:border-slate-300">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
-        <div className="flex-1">
-          <div className="flex items-center gap-1.5 mb-1">
-             <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+    <div
+      className={`group relative rounded-md border border-slate-200 border-l-4 bg-white p-2.5 transition-colors duration-200 hover:border-slate-300 sm:p-3 ${
+        dropMarkerPosition ? 'ring-1 ring-slate-300' : ''
+      } ${milestoneRingClass}`}
+      onDragOver={onTaskDragOver}
+      onDrop={() => onTaskDrop?.()}
+    >
+      {dropMarkerPosition === 'before' && (
+        <>
+          <div className="pointer-events-none absolute -top-[8px] left-2 right-2 h-1.5 rounded-full border border-indigo-100 bg-indigo-600 shadow-md shadow-indigo-500/40" />
+          <div className="pointer-events-none absolute -top-[11px] left-1.5 h-3 w-3 rounded-full border-2 border-white bg-indigo-700 shadow-md shadow-indigo-500/40" />
+        </>
+      )}
+      {dropMarkerPosition === 'after' && (
+        <>
+          <div className="pointer-events-none absolute -bottom-[8px] left-2 right-2 h-1.5 rounded-full border border-indigo-100 bg-indigo-600 shadow-md shadow-indigo-500/40" />
+          <div className="pointer-events-none absolute -bottom-[11px] left-1.5 h-3 w-3 rounded-full border-2 border-white bg-indigo-700 shadow-md shadow-indigo-500/40" />
+        </>
+      )}
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+             {draggableTask && (
+               <div
+                 draggable
+                 onDragStart={(event) => {
+                   event.dataTransfer.effectAllowed = 'move';
+                   event.dataTransfer.setData('text/plain', part.taskId);
+                   onTaskDragStart?.();
+                 }}
+                 onDragEnd={() => onTaskDragEnd?.()}
+                 className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-200 bg-slate-50 text-slate-500 cursor-grab active:cursor-grabbing hover:bg-slate-100"
+                 title="Dra for aa endre rekkefolge"
+                 aria-label="Dra for aa endre rekkefolge"
+               >
+                 <GripVertical size={12} />
+               </div>
+             )}
+             <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${milestoneBadgeClass}`}>
                {part.milestoneName}
              </span>
              <ChevronRight size={10} className="text-slate-300" />
@@ -65,10 +118,10 @@ const TaskCard: React.FC<TaskCardProps> = ({ part, onEstimateChange, currentEsti
                </span>
              )}
           </div>
-          <h4 className="text-sm font-semibold text-slate-800 leading-tight">
+          <h4 className="truncate text-sm font-semibold leading-tight text-slate-800">
             {part.taskName}
           </h4>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 lg:gap-3">
             <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 ${colors.text}`}>
               <span className={`inline-block h-2 w-2 rounded-full ${colors.dot}`} />
               <span className="hidden sm:inline">{getAssigneeIcon(part.assignee)}</span>
@@ -92,7 +145,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ part, onEstimateChange, currentEsti
         </div>
 
         {/* Edit Estimate Zone (Only on the first slice of a task) */}
-        <div className="shrink-0 pt-2 md:pt-0 border-t md:border-t-0 md:border-l border-slate-200 md:pl-3">
+        <div className="shrink-0 border-t border-slate-200 pt-2 lg:border-l lg:border-t-0 lg:pl-3 lg:pt-0">
           {part.partIndex === 1 ? (
             <div className="flex flex-col gap-0.5">
               <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Total estimat</label>

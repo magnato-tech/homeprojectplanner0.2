@@ -17,12 +17,14 @@ export interface Task {
   estimateHours: number;
   assignee: Assignee;
   equipment?: EquipmentItem[];
+  hardStartDate?: Date;
 }
 
 export interface Milestone {
   id: string;
   name: string;
   tasks: Task[];
+  startDate?: Date;
 }
 
 export interface TaskPart {

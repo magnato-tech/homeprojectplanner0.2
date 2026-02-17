@@ -1,7 +1,10 @@
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { format, getISOWeek, getYear } from 'date-fns';
 import { nb } from 'date-fns/locale';
+import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { 
   Hammer, 
   Settings2, 
@@ -10,11 +13,13 @@ import {
   Clock, 
   ChevronRight,
   Plus,
-  ChevronDown
+  ChevronDown,
+  CalendarDays,
+  GripVertical
 } from 'lucide-react';
 import SettingsView from './components/SettingsView';
 import BudgetView from './components/BudgetView';
-import { Assignee, BudgetActuals, Milestone, ProjectConfig, DaySchedule } from './types';
+import { Assignee, BudgetActuals, Milestone, ProjectConfig, DaySchedule, Task } from './types';
 import { INITIAL_MILESTONES, DEFAULT_CAPACITIES, DEFAULT_LABOR_RATES } from './constants';
 import { calculateSchedule } from './services/scheduler';
 import TaskCard from './components/TaskCard';
@@ -25,6 +30,61 @@ interface WeekGroup {
   days: DaySchedule[];
   totalHours: number;
 }
+
+const MILESTONE_THEME_RING = [
+  'border-l-sky-400',
+  'border-l-emerald-400',
+  'border-l-violet-400',
+  'border-l-amber-400',
+  'border-l-rose-400',
+];
+
+const MILESTONE_THEME_BADGE = [
+  'bg-sky-50 text-sky-700 border-sky-200',
+  'bg-emerald-50 text-emerald-700 border-emerald-200',
+  'bg-violet-50 text-violet-700 border-violet-200',
+  'bg-amber-50 text-amber-700 border-amber-200',
+  'bg-rose-50 text-rose-700 border-rose-200',
+];
+
+interface SortableTaskRowProps {
+  id: string;
+  name: string;
+  assignee: Assignee;
+  estimateHours: number;
+}
+
+const SortableTaskRow: React.FC<SortableTaskRowProps> = ({ id, name, assignee, estimateHours }) => {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center justify-between rounded border border-slate-200 bg-white px-2.5 py-2"
+    >
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-slate-800">{name}</p>
+        <p className="text-[11px] text-slate-500">
+          {assignee} • {estimateHours}t
+        </p>
+      </div>
+      <button
+        type="button"
+        className="ml-3 inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-slate-500 hover:bg-slate-50"
+        aria-label="Dra for aa endre rekkefolge"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical size={14} />
+      </button>
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const [milestones, setMilestones] = useState<Milestone[]>(INITIAL_MILESTONES);
@@ -37,10 +97,26 @@ const App: React.FC = () => {
     material: 0,
     rental: 0,
   });
+  const [activeMilestoneForAdd, setActiveMilestoneForAdd] = useState<string | null>(null);
+  const [activeMilestoneForDate, setActiveMilestoneForDate] = useState<string | null>(null);
+  const [activeMilestoneForSort, setActiveMilestoneForSort] = useState<string | null>(null);
+  const [draggedTimelineTask, setDraggedTimelineTask] = useState<{ taskId: string; milestoneId: string } | null>(null);
+  const [timelineDropTarget, setTimelineDropTarget] = useState<{ taskId: string; position: 'before' | 'after' } | null>(null);
+  const [newTaskName, setNewTaskName] = useState('');
+  const [newTaskHours, setNewTaskHours] = useState(4);
+  const [newTaskAssignee, setNewTaskAssignee] = useState<Assignee>('Meg selv');
+  const [milestoneStartDateInput, setMilestoneStartDateInput] = useState('');
   const [config, setConfig] = useState<ProjectConfig>({
     startDate: new Date(),
     dayCapacities: DEFAULT_CAPACITIES,
   });
+
+  const assignees: Assignee[] = ['Meg selv', 'Snekker', 'Rørlegger', 'Elektriker', 'Maler'];
+  const milestoneById = useMemo(
+    () => new Map(milestones.map((milestone, index) => [milestone.id, { milestone, index }])),
+    [milestones]
+  );
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   const schedule = useMemo(() => {
     return calculateSchedule(milestones, config);
@@ -95,6 +171,137 @@ const App: React.FC = () => {
       }
     }));
   };
+
+  const openAddTaskDialog = (milestoneId: string) => {
+    setActiveMilestoneForAdd(milestoneId);
+    setNewTaskName('');
+    setNewTaskHours(4);
+    setNewTaskAssignee('Meg selv');
+  };
+
+  const openMilestoneDateDialog = (milestoneId: string) => {
+    const selected = milestones.find((m) => m.id === milestoneId);
+    const inputValue = selected?.startDate ? format(selected.startDate, 'yyyy-MM-dd') : '';
+    setMilestoneStartDateInput(inputValue);
+    setActiveMilestoneForDate(milestoneId);
+  };
+
+  const handleAddTask = () => {
+    if (!activeMilestoneForAdd) return;
+    const trimmedName = newTaskName.trim();
+    if (!trimmedName) return;
+
+    const task: Task = {
+      id: `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      name: trimmedName,
+      estimateHours: Math.max(1, newTaskHours),
+      assignee: newTaskAssignee,
+      equipment: [],
+    };
+
+    setMilestones((prev) =>
+      prev.map((milestone) =>
+        milestone.id === activeMilestoneForAdd
+          ? { ...milestone, tasks: [...milestone.tasks, task] }
+          : milestone
+      )
+    );
+    setActiveMilestoneForAdd(null);
+  };
+
+  const handleSaveMilestoneStartDate = () => {
+    if (!activeMilestoneForDate) return;
+    const parsed = milestoneStartDateInput ? new Date(milestoneStartDateInput) : undefined;
+
+    setMilestones((prev) =>
+      prev.map((milestone) =>
+        milestone.id === activeMilestoneForDate
+          ? { ...milestone, startDate: parsed }
+          : milestone
+      )
+    );
+    setActiveMilestoneForDate(null);
+  };
+
+  const handleSortTaskDragEnd = (event: DragEndEvent) => {
+    if (!activeMilestoneForSort) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setMilestones((prev) =>
+      prev.map((milestone) => {
+        if (milestone.id !== activeMilestoneForSort) return milestone;
+        const oldIndex = milestone.tasks.findIndex((task) => task.id === active.id);
+        const newIndex = milestone.tasks.findIndex((task) => task.id === over.id);
+        if (oldIndex < 0 || newIndex < 0) return milestone;
+        return { ...milestone, tasks: arrayMove(milestone.tasks, oldIndex, newIndex) };
+      })
+    );
+  };
+
+  const handleTimelineTaskDragStart = (taskId: string, milestoneId: string) => {
+    setDraggedTimelineTask({ taskId, milestoneId });
+  };
+
+  const handleTimelineTaskDrop = (targetTaskId: string, targetMilestoneId: string) => {
+    if (!draggedTimelineTask) return;
+    if (draggedTimelineTask.milestoneId !== targetMilestoneId) {
+      setDraggedTimelineTask(null);
+      setTimelineDropTarget(null);
+      return;
+    }
+    if (draggedTimelineTask.taskId === targetTaskId) {
+      setDraggedTimelineTask(null);
+      setTimelineDropTarget(null);
+      return;
+    }
+
+    setMilestones((prev) =>
+      prev.map((milestone) => {
+        if (milestone.id !== draggedTimelineTask.milestoneId) return milestone;
+        const sourceIndex = milestone.tasks.findIndex((task) => task.id === draggedTimelineTask.taskId);
+        const targetIndex = milestone.tasks.findIndex((task) => task.id === targetTaskId);
+        if (sourceIndex < 0 || targetIndex < 0) return milestone;
+
+        const next = [...milestone.tasks];
+        const [movedTask] = next.splice(sourceIndex, 1);
+        const dropPosition = timelineDropTarget?.position ?? 'before';
+        let insertIndex = targetIndex + (dropPosition === 'after' ? 1 : 0);
+        if (sourceIndex < targetIndex) {
+          insertIndex -= 1;
+        }
+        next.splice(Math.max(0, Math.min(next.length, insertIndex)), 0, movedTask);
+        return { ...milestone, tasks: next };
+      })
+    );
+
+    setDraggedTimelineTask(null);
+    setTimelineDropTarget(null);
+  };
+
+  const clearTimelineDragState = useCallback(() => {
+    setDraggedTimelineTask(null);
+    setTimelineDropTarget(null);
+  }, []);
+
+  useEffect(() => {
+    if (!draggedTimelineTask) return;
+
+    const handleGlobalDragStop = () => {
+      setDraggedTimelineTask(null);
+      setTimelineDropTarget(null);
+    };
+
+    window.addEventListener('dragend', handleGlobalDragStop);
+    window.addEventListener('drop', handleGlobalDragStop);
+    window.addEventListener('blur', handleGlobalDragStop);
+
+    return () => {
+      window.removeEventListener('dragend', handleGlobalDragStop);
+      window.removeEventListener('drop', handleGlobalDragStop);
+      window.removeEventListener('blur', handleGlobalDragStop);
+    };
+  }, [draggedTimelineTask]);
 
   const getTaskEstimate = (taskId: string) => {
     for (const m of milestones) {
@@ -224,8 +431,11 @@ const App: React.FC = () => {
             {activeView === 'timeline' && (
             <div className="max-w-6xl mx-auto">
               {/* The Actual Timeline with Week Groups */}
-              <div className="space-y-5">
-                {groupedSchedule.map((group) => {
+              <div className="space-y-4">
+                {(() => {
+                  let lastRenderedMilestoneId: string | null = null;
+
+                  return groupedSchedule.map((group) => {
                   const isCollapsed = collapsedWeeks.has(group.weekId);
 
                   return (
@@ -233,7 +443,7 @@ const App: React.FC = () => {
                       {/* Week Header / Toggle */}
                       <div 
                         onClick={() => toggleWeek(group.weekId)}
-                        className="sticky top-0 z-10 flex items-center justify-between bg-slate-100/95 py-2 mb-3 cursor-pointer"
+                        className="sticky top-0 z-10 mb-2 flex cursor-pointer items-center justify-between bg-slate-100/95 py-1.5"
                       >
                         <div className="flex items-center gap-2.5">
                           <div className="px-3 py-1 bg-white border border-slate-200 rounded-md flex items-center gap-2">
@@ -266,7 +476,7 @@ const App: React.FC = () => {
 
                       {/* Day List */}
                       {!isCollapsed && (
-                        <div className="relative border-l border-slate-300 ml-4 sm:ml-5 pl-4 sm:pl-5 space-y-4 pb-1">
+                        <div className="relative ml-4 space-y-3 border-l border-slate-300 pb-1 pl-4 sm:ml-5 sm:pl-5">
                           {group.days.map((day, idx) => {
                             const isWeekend = day.date.getDay() === 0 || day.date.getDay() === 6;
                             const isToday = format(day.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
@@ -281,7 +491,7 @@ const App: React.FC = () => {
                                 </div>
 
                                 {/* Day Header */}
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2">
+                                <div className="mb-1.5 flex flex-col justify-between sm:flex-row sm:items-center">
                                   <div>
                                     <h4 className={`text-sm font-semibold capitalize ${isWeekend ? 'text-slate-500' : 'text-slate-900'}`}>
                                       {format(day.date, 'EEEE d. MMMM', { locale: nb })}
@@ -303,15 +513,114 @@ const App: React.FC = () => {
                                 </div>
 
                                 {/* Tasks for the Day */}
-                                <div className="grid grid-cols-1 gap-2">
-                                  {day.parts.map((part) => (
-                                    <TaskCard 
-                                      key={`${part.taskId}-${part.partIndex}`} 
-                                      part={part} 
-                                      onEstimateChange={handleUpdateEstimate}
-                                      currentEstimate={getTaskEstimate(part.taskId)}
-                                    />
-                                  ))}
+                                <div className="grid grid-cols-1 gap-1.5">
+                                  {day.parts.map((part, partIdx) => {
+                                    const previousPart = day.parts[partIdx - 1];
+                                    const isNewMilestoneInsideDay =
+                                      partIdx === 0 || previousPart.milestoneId !== part.milestoneId;
+                                    const isNewMilestoneSegment =
+                                      isNewMilestoneInsideDay && lastRenderedMilestoneId !== part.milestoneId;
+                                    const milestoneMeta = milestoneById.get(part.milestoneId);
+                                    const milestoneIndex = milestoneMeta?.index ?? 0;
+                                    const badgeClass =
+                                      MILESTONE_THEME_BADGE[milestoneIndex % MILESTONE_THEME_BADGE.length];
+                                    const ringClass =
+                                      MILESTONE_THEME_RING[milestoneIndex % MILESTONE_THEME_RING.length];
+                                    const milestoneStartDate = milestoneMeta?.milestone.startDate;
+                                    const isPrimaryTaskCard = part.partIndex === 1;
+                                    const dropMarkerPosition =
+                                      timelineDropTarget?.taskId === part.taskId
+                                        ? timelineDropTarget.position
+                                        : null;
+                                    const canTimelineDrop =
+                                      isPrimaryTaskCard &&
+                                      !!draggedTimelineTask &&
+                                      draggedTimelineTask.milestoneId === part.milestoneId &&
+                                      draggedTimelineTask.taskId !== part.taskId;
+
+                                    if (isNewMilestoneSegment) {
+                                      lastRenderedMilestoneId = part.milestoneId;
+                                    }
+
+                                    return (
+                                      <React.Fragment key={`${part.taskId}-${part.partIndex}`}>
+                                        {isNewMilestoneSegment && (
+                                          <div className="group mb-1 flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-2 py-1">
+                                            <div className="flex items-center gap-2">
+                                              <span className={`rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badgeClass}`}>
+                                                Milepæl
+                                              </span>
+                                              <span className="text-xs font-semibold text-slate-700">
+                                                {part.milestoneName}
+                                              </span>
+                                              {milestoneStartDate && (
+                                                <span className="text-[10px] font-medium text-slate-500">
+                                                  Start: {format(milestoneStartDate, 'd. MMM', { locale: nb })}
+                                                </span>
+                                              )}
+                                            </div>
+
+                                            <div className="flex items-center gap-1">
+                                              <button
+                                                type="button"
+                                                onClick={() => setActiveMilestoneForSort(part.milestoneId)}
+                                                className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
+                                                title="Endre oppgaverekkefolge i milepael"
+                                              >
+                                                <GripVertical size={12} />
+                                                Rekkefolge
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => openMilestoneDateDialog(part.milestoneId)}
+                                                className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
+                                                title="Sett startdato for milepæl"
+                                              >
+                                                <CalendarDays size={12} />
+                                                Dato
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => openAddTaskDialog(part.milestoneId)}
+                                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 transition-all hover:scale-110 hover:border-slate-800 hover:bg-slate-800 hover:text-white"
+                                                title="Legg til oppgave i milepæl"
+                                                aria-label="Legg til oppgave i milepæl"
+                                              >
+                                                <Plus size={14} />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        <TaskCard 
+                                          part={part} 
+                                          onEstimateChange={handleUpdateEstimate}
+                                          currentEstimate={getTaskEstimate(part.taskId)}
+                                          milestoneBadgeClass={badgeClass}
+                                          milestoneRingClass={ringClass}
+                                          draggableTask={isPrimaryTaskCard}
+                                          dropMarkerPosition={dropMarkerPosition}
+                                          onTaskDragStart={() => handleTimelineTaskDragStart(part.taskId, part.milestoneId)}
+                                          onTaskDragEnd={clearTimelineDragState}
+                                          onTaskDragOver={(event) => {
+                                            if (!canTimelineDrop) return;
+                                            event.preventDefault();
+                                            const cardRect = event.currentTarget.getBoundingClientRect();
+                                            const offsetY = event.clientY - cardRect.top;
+                                            const position: 'before' | 'after' =
+                                              offsetY < cardRect.height / 2 ? 'before' : 'after';
+                                            if (
+                                              timelineDropTarget?.taskId !== part.taskId ||
+                                              timelineDropTarget.position !== position
+                                            ) {
+                                              setTimelineDropTarget({ taskId: part.taskId, position });
+                                            }
+                                          }}
+                                          onTaskDrop={() => handleTimelineTaskDrop(part.taskId, part.milestoneId)}
+                                        />
+                                      </React.Fragment>
+                                    );
+                                  })}
                                   {day.parts.length === 0 && (
                                     <div className="p-3 bg-slate-50 border border-dashed border-slate-200 rounded-md flex items-center justify-center">
                                       <p className="text-xs italic text-slate-400">Ingen oppgaver planlagt</p>
@@ -328,7 +637,8 @@ const App: React.FC = () => {
                       {isCollapsed && <div className="h-2" />}
                   </section>
                 );
-              })}
+              });
+                })()}
 
               <div className="pt-1">
                 <button className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white text-slate-700 rounded-md font-medium text-sm border border-slate-300 hover:bg-slate-50 transition-colors">
@@ -360,6 +670,159 @@ const App: React.FC = () => {
             )}
           </div>
       </main>
+
+      {activeMilestoneForAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3">
+          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white shadow-xl">
+            <div className="border-b border-slate-200 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Ny oppgave</p>
+              <h3 className="text-sm font-semibold text-slate-900">
+                {milestoneById.get(activeMilestoneForAdd)?.milestone.name}
+              </h3>
+            </div>
+            <div className="space-y-3 p-4">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-500">Oppgavenavn</label>
+                <input
+                  type="text"
+                  value={newTaskName}
+                  onChange={(e) => setNewTaskName(e.target.value)}
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  placeholder="Eks: Montere servant"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">Estimat (timer)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newTaskHours}
+                    onChange={(e) => setNewTaskHours(parseInt(e.target.value, 10) || 1)}
+                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">Ansvarlig</label>
+                  <select
+                    value={newTaskAssignee}
+                    onChange={(e) => setNewTaskAssignee(e.target.value as Assignee)}
+                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  >
+                    {assignees.map((assignee) => (
+                      <option key={assignee} value={assignee}>
+                        {assignee}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setActiveMilestoneForAdd(null)}
+                className="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Avbryt
+              </button>
+              <button
+                type="button"
+                onClick={handleAddTask}
+                className="rounded bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-900"
+              >
+                Legg til
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeMilestoneForDate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3">
+          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white shadow-xl">
+            <div className="border-b border-slate-200 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Milepælstart</p>
+              <h3 className="text-sm font-semibold text-slate-900">
+                {milestoneById.get(activeMilestoneForDate)?.milestone.name}
+              </h3>
+            </div>
+            <div className="p-4">
+              <label className="mb-1 block text-xs font-semibold text-slate-500">Startdato (valgfri)</label>
+              <input
+                type="date"
+                value={milestoneStartDateInput}
+                onChange={(e) => setMilestoneStartDateInput(e.target.value)}
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+              />
+              <p className="mt-2 text-[11px] text-slate-500">
+                Hvis datoen settes tidligere enn mulig, bruker motoren første lovlige dato etter forrige milepæl.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setActiveMilestoneForDate(null)}
+                className="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Avbryt
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveMilestoneStartDate}
+                className="rounded bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-900"
+              >
+                Lagre
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeMilestoneForSort && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3">
+          <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white shadow-xl">
+            <div className="border-b border-slate-200 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Drag and drop</p>
+              <h3 className="text-sm font-semibold text-slate-900">
+                Oppgaverekkefolge: {milestoneById.get(activeMilestoneForSort)?.milestone.name}
+              </h3>
+            </div>
+            <div className="p-4">
+              <p className="mb-2 text-xs text-slate-500">
+                Dra i handtaket for aa endre rekkefolge. Tidsplanen oppdateres umiddelbart.
+              </p>
+              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleSortTaskDragEnd}>
+                <SortableContext
+                  items={(milestoneById.get(activeMilestoneForSort)?.milestone.tasks ?? []).map((task) => task.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-2">
+                    {(milestoneById.get(activeMilestoneForSort)?.milestone.tasks ?? []).map((task) => (
+                      <SortableTaskRow
+                        key={task.id}
+                        id={task.id}
+                        name={task.name}
+                        assignee={task.assignee}
+                        estimateHours={task.estimateHours}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            </div>
+            <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setActiveMilestoneForSort(null)}
+                className="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Lukk
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating chain reaction hint */}
       <div className="fixed bottom-6 right-6 z-50 pointer-events-none hidden md:block">

@@ -93,9 +93,51 @@ describe('calculateSchedule', () => {
     expect(schedule[0].date).toEqual(startOfDay(parseISO('2026-03-03T00:00:00.000Z')));
     expect(schedule[0].parts[0].milestoneName).toBe('Milestone 1');
 
-    // Milestone 2 starts on March 5 (Day 2) due to milestone gating
+    // Milestone 2 starts on March 4 (day after milestone 1 finishes)
     expect(schedule[1].date).toEqual(startOfDay(parseISO('2026-03-04T00:00:00.000Z')));
     expect(schedule[1].parts[0].milestoneName).toBe('Milestone 2');
+  });
+
+  it('should use milestone startDate when later than the gated start date', () => {
+    const milestones: Milestone[] = [
+      createMilestone('m1', 'Milestone 1', [
+        createTask('t1', 'Task 1', 8, 'Meg selv'),
+      ]),
+      {
+        ...createMilestone('m2', 'Milestone 2', [
+          createTask('t2', 'Task 2', 8, 'Meg selv'),
+        ]),
+        startDate: parseISO('2026-03-10T00:00:00.000Z'),
+      },
+    ];
+
+    const schedule = calculateSchedule(milestones, defaultProjectConfig);
+
+    expect(schedule[0].date).toEqual(startOfDay(parseISO('2026-03-03T00:00:00.000Z')));
+    expect(schedule[1].date).toEqual(startOfDay(parseISO('2026-03-10T00:00:00.000Z')));
+    expect(schedule[1].parts[0].milestoneName).toBe('Milestone 2');
+  });
+
+  it('should not allow milestone startDate to overlap previous milestone', () => {
+    const milestones: Milestone[] = [
+      createMilestone('m1', 'Milestone 1', [
+        createTask('t1', 'Task 1', 16, 'Meg selv'), // Mar 3 + Mar 4
+      ]),
+      {
+        ...createMilestone('m2', 'Milestone 2', [
+          createTask('t2', 'Task 2', 8, 'Meg selv'),
+        ]),
+        startDate: parseISO('2026-03-04T00:00:00.000Z'), // Earlier than allowed
+      },
+    ];
+
+    const schedule = calculateSchedule(milestones, defaultProjectConfig);
+
+    expect(schedule[0].date).toEqual(startOfDay(parseISO('2026-03-03T00:00:00.000Z')));
+    expect(schedule[1].date).toEqual(startOfDay(parseISO('2026-03-04T00:00:00.000Z')));
+    // Milestone 2 must start the day after m1 is done (March 5)
+    expect(schedule[2].date).toEqual(startOfDay(parseISO('2026-03-05T00:00:00.000Z')));
+    expect(schedule[2].parts[0].milestoneName).toBe('Milestone 2');
   });
 
   it('should skip non-working days (Sundays and Saturdays)', () => {

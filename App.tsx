@@ -162,6 +162,59 @@ const App: React.FC = () => {
     );
   }, []);
 
+  const handleToggleTaskCompleted = useCallback((taskId: string, completed: boolean) => {
+    setMilestones((prev) =>
+      prev.map((milestone) => ({
+        ...milestone,
+        tasks: milestone.tasks.map((task) =>
+          task.id === taskId ? { ...task, completed } : task
+        ),
+      }))
+    );
+  }, []);
+
+  const handleUpdateTaskAssignee = useCallback((taskId: string, assignee: Assignee) => {
+    setMilestones((prev) =>
+      prev.map((milestone) => ({
+        ...milestone,
+        tasks: milestone.tasks.map((task) =>
+          task.id === taskId ? { ...task, assignee } : task
+        ),
+      }))
+    );
+  }, []);
+
+  const handleEditTask = useCallback((taskId: string) => {
+    let taskToEdit: Task | undefined;
+    for (const milestone of milestones) {
+      const found = milestone.tasks.find((task) => task.id === taskId);
+      if (found) {
+        taskToEdit = found;
+        break;
+      }
+    }
+    if (!taskToEdit) return;
+
+    const nextName = window.prompt('Nytt navn på oppgave', taskToEdit.name);
+    if (nextName === null) return;
+
+    const nextHoursRaw = window.prompt('Nytt estimat (timer)', String(taskToEdit.estimateHours));
+    if (nextHoursRaw === null) return;
+    const nextHours = Number(nextHoursRaw);
+    if (!Number.isFinite(nextHours) || nextHours <= 0) return;
+
+    setMilestones((prev) =>
+      prev.map((milestone) => ({
+        ...milestone,
+        tasks: milestone.tasks.map((task) =>
+          task.id === taskId
+            ? { ...task, name: nextName.trim() || task.name, estimateHours: Math.max(1, nextHours) }
+            : task
+        ),
+      }))
+    );
+  }, [milestones]);
+
   const handleUpdateCapacity = (day: number, hours: number) => {
     setConfig(prev => ({
       ...prev,
@@ -197,6 +250,7 @@ const App: React.FC = () => {
       estimateHours: Math.max(1, newTaskHours),
       assignee: newTaskAssignee,
       equipment: [],
+      completed: false,
     };
 
     setMilestones((prev) =>
@@ -309,6 +363,14 @@ const App: React.FC = () => {
       if (t) return t.estimateHours;
     }
     return 0;
+  };
+
+  const getTaskCompleted = (taskId: string) => {
+    for (const milestone of milestones) {
+      const task = milestone.tasks.find((tk) => tk.id === taskId);
+      if (task) return task.completed ?? false;
+    }
+    return false;
   };
 
   const budgetBreakdown = useMemo(() => {
@@ -616,6 +678,11 @@ const App: React.FC = () => {
                                         <TaskCard 
                                           part={part} 
                                           onEstimateChange={handleUpdateEstimate}
+                                          onEditTask={handleEditTask}
+                                          onToggleCompleted={handleToggleTaskCompleted}
+                                          onAssigneeChange={handleUpdateTaskAssignee}
+                                          assigneeOptions={assignees}
+                                          isCompleted={getTaskCompleted(part.taskId)}
                                           currentEstimate={getTaskEstimate(part.taskId)}
                                           milestoneRingClass={ringClass}
                                           draggableTask={isPrimaryTaskCard}

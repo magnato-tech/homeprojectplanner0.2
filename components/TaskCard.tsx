@@ -1,12 +1,17 @@
 
 import React, { useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { User, Clock, HardHat, Hammer, Droplets, Zap, Paintbrush, Package, X, GripVertical } from 'lucide-react';
+import { User, Clock, HardHat, Hammer, Droplets, Zap, Paintbrush, Package, X, GripVertical, Pencil } from 'lucide-react';
 import { TaskPart, Assignee } from '../types';
 
 interface TaskCardProps {
   part: TaskPart;
   onEstimateChange: (taskId: string, newHours: number) => void;
+  onEditTask: (taskId: string) => void;
+  onToggleCompleted: (taskId: string, completed: boolean) => void;
+  onAssigneeChange: (taskId: string, assignee: Assignee) => void;
+  assigneeOptions: Assignee[];
+  isCompleted: boolean;
   currentEstimate: number;
   milestoneRingClass?: string;
   draggableTask?: boolean;
@@ -49,6 +54,11 @@ const formatCurrencyNok = (value: number) =>
 const TaskCard: React.FC<TaskCardProps> = ({
   part,
   onEstimateChange,
+  onEditTask,
+  onToggleCompleted,
+  onAssigneeChange,
+  assigneeOptions,
+  isCompleted,
   currentEstimate,
   milestoneRingClass = 'border-l-slate-300',
   draggableTask = false,
@@ -71,7 +81,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
     <div
       className={`group relative rounded-md border border-slate-200 border-l-4 bg-white p-2 transition-colors duration-200 hover:border-slate-300 sm:p-2.5 ${
         dropMarkerPosition ? 'ring-1 ring-slate-300' : ''
-      } ${milestoneRingClass}`}
+      } ${milestoneRingClass} ${isCompleted ? 'opacity-75' : ''}`}
       onDragOver={onTaskDragOver}
       onDrop={() => onTaskDrop?.()}
     >
@@ -112,15 +122,40 @@ const TaskCard: React.FC<TaskCardProps> = ({
                </span>
              )}
           </div>
-          <h4 className="truncate text-sm font-semibold leading-tight text-slate-800">
+          <h4 className={`truncate text-sm font-semibold leading-tight ${isCompleted ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
             {part.taskName}
           </h4>
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5 lg:gap-2.5">
-            <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 ${colors.text}`}>
-              <span className={`inline-block h-2 w-2 rounded-full ${colors.dot}`} />
-              <span className="hidden sm:inline">{getAssigneeIcon(part.assignee)}</span>
-              {part.assignee}
-            </div>
+            <label className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={isCompleted}
+                onChange={(e) => onToggleCompleted(part.taskId, e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-300"
+              />
+              Ferdig
+            </label>
+            <button
+              type="button"
+              onClick={() => onEditTask(part.taskId)}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
+              title="Rediger oppgave"
+            >
+              <Pencil size={12} />
+              Rediger
+            </button>
+            <select
+              value={part.assignee}
+              onChange={(e) => onAssigneeChange(part.taskId, e.target.value as Assignee)}
+              className={`rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-medium ${colors.text} focus:outline-none focus:ring-2 focus:ring-slate-300`}
+              title="Velg person"
+            >
+              {assigneeOptions.map((assignee) => (
+                <option key={assignee} value={assignee}>
+                  {assignee}
+                </option>
+              ))}
+            </select>
             <div className="flex items-center gap-1 text-slate-500 text-[11px] font-medium">
               <Clock size={12} className="opacity-50" />
               <span>{part.hoursSpent}t i dag</span>

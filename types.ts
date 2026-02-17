@@ -18,6 +18,7 @@ export interface Task {
   assignee: Assignee;
   equipment?: EquipmentItem[];
   hardStartDate?: Date;
+  completed?: boolean;
 }
 
 export interface Milestone {

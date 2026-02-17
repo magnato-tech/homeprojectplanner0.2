@@ -1,0 +1,5 @@
+{
+  "name": "Home Project Planner MVP",
+  "description": "A deterministic project scheduler for homeowners to coordinate their DIY tasks with professional contractors, ensuring a clear timeline with capacity-based task splitting.",
+  "requestFramePermissions": []
+}

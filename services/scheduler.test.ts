@@ -238,4 +238,134 @@ describe('calculateSchedule', () => {
     expect(schedule[1].parts[0].totalParts).toBe(3);
     expect(schedule[2].parts[0].totalParts).toBe(3);
   });
+
+  // ---------------------------------------------------------------------------
+  // Pinned task (hardStartDate) tests
+  // ---------------------------------------------------------------------------
+
+  const createPinnedTask = (
+    id: string,
+    name: string,
+    estimateHours: number,
+    assignee: Assignee,
+    hardStartDate: Date,
+    startTime?: string,
+  ): Task => ({
+    id,
+    name,
+    estimateHours,
+    assignee,
+    hardStartDate,
+    startTime,
+  });
+
+  it('pinned task lands on its exact hardStartDate', () => {
+    // t1 is normal (4h), t2 is pinned to Wednesday March 5.
+    // t1 fills Tuesday Mar 3, so t2 should jump directly to Mar 5.
+    const pinnedDate = parseISO('2026-03-05T00:00:00.000Z'); // Wednesday
+    const milestones: Milestone[] = [
+      createMilestone('m1', 'Milestone 1', [
+        createTask('t1', 'Task 1', 4, 'Meg selv'),
+        createPinnedTask('t2', 'Elektriker', 2, 'Elektriker', pinnedDate),
+      ]),
+    ];
+
+    const schedule = calculateSchedule(milestones, defaultProjectConfig);
+
+    const day = schedule.find(d => d.date.getTime() === startOfDay(pinnedDate).getTime());
+    expect(day).toBeDefined();
+    expect(day!.parts.some(p => p.taskId === 't2')).toBe(true);
+  });
+
+  it('pinned task is NOT moved when upstream work fills the same day', () => {
+    // t1 fills the entire day (8h) on Mar 3. t2 is pinned to Mar 3.
+    // The pinned task must still land on Mar 3 (capacity boosted), not be pushed away.
+    const pinnedDate = parseISO('2026-03-03T00:00:00.000Z'); // Tuesday
+    const milestones: Milestone[] = [
+      createMilestone('m1', 'Milestone 1', [
+        createTask('t1', 'Task 1', 8, 'Meg selv'),
+        createPinnedTask('t2', 'Elektriker', 2, 'Elektriker', pinnedDate),
+      ]),
+    ];
+
+    const schedule = calculateSchedule(milestones, defaultProjectConfig);
+
+    const pinnedDay = schedule.find(d => d.date.getTime() === startOfDay(pinnedDate).getTime());
+    expect(pinnedDay).toBeDefined();
+    expect(pinnedDay!.parts.some(p => p.taskId === 't2')).toBe(true);
+  });
+
+  it('capacity is boosted on the pinned day to fit the pinned task', () => {
+    // t1 uses 8h (full day), t2 (pinned, 2h) lands same day.
+    // totalCapacity must be boosted to at least 10.
+    const pinnedDate = parseISO('2026-03-03T00:00:00.000Z');
+    const milestones: Milestone[] = [
+      createMilestone('m1', 'Milestone 1', [
+        createTask('t1', 'Task 1', 8, 'Meg selv'),
+        createPinnedTask('t2', 'Elektriker', 2, 'Elektriker', pinnedDate),
+      ]),
+    ];
+
+    const schedule = calculateSchedule(milestones, defaultProjectConfig);
+
+    const pinnedDay = schedule.find(d => d.date.getTime() === startOfDay(pinnedDate).getTime());
+    expect(pinnedDay!.totalCapacity).toBeGreaterThanOrEqual(10);
+  });
+
+  it('pinned task on a non-working day (Saturday) is still scheduled there', () => {
+    // Saturday has capacity 0 normally, but a confirmed appointment can fall on it.
+    const saturday = parseISO('2026-03-07T00:00:00.000Z'); // Saturday
+    const milestones: Milestone[] = [
+      createMilestone('m1', 'Milestone 1', [
+        createPinnedTask('t1', 'Leveranse', 2, 'Meg selv', saturday),
+      ]),
+    ];
+
+    const schedule = calculateSchedule(milestones, defaultProjectConfig);
+
+    const saturdaySlot = schedule.find(d => d.date.getTime() === startOfDay(saturday).getTime());
+    expect(saturdaySlot).toBeDefined();
+    expect(saturdaySlot!.parts.some(p => p.taskId === 't1')).toBe(true);
+  });
+
+  it('upstream non-pinned task is NOT truncated at the pinned wall', () => {
+    // t1 is 12h — it must get all 12h scheduled even though t2 is pinned to Mar 4.
+    // The scheduler must not cut t1's hours; conflict is a UI concern only.
+    const pinnedDate = parseISO('2026-03-04T00:00:00.000Z'); // Wednesday
+    const milestones: Milestone[] = [
+      createMilestone('m1', 'Milestone 1', [
+        createTask('t1', 'Task 1', 12, 'Meg selv'), // will overflow past Mar 3
+        createPinnedTask('t2', 'Rørlegger', 2, 'Rørlegger', pinnedDate),
+      ]),
+    ];
+
+    const schedule = calculateSchedule(milestones, defaultProjectConfig);
+
+    const totalT1Hours = schedule
+      .flatMap(d => d.parts)
+      .filter(p => p.taskId === 't1')
+      .reduce((sum, p) => sum + p.hoursSpent, 0);
+
+    expect(totalT1Hours).toBe(12);
+  });
+
+  it('normal tasks after a pinned task continue from the pinned date onward', () => {
+    // t1 (pinned, 2h) on Mar 10 (Tuesday). t2 (normal, 4h) must start Mar 10 or later.
+    const pinnedDate = parseISO('2026-03-10T00:00:00.000Z'); // Tuesday
+    const milestones: Milestone[] = [
+      createMilestone('m1', 'Milestone 1', [
+        createPinnedTask('t1', 'Elektriker', 2, 'Elektriker', pinnedDate),
+        createTask('t2', 'Task 2', 4, 'Meg selv'),
+      ]),
+    ];
+
+    const schedule = calculateSchedule(milestones, defaultProjectConfig);
+
+    const t2Parts = schedule.flatMap(d => d.parts).filter(p => p.taskId === 't2');
+    expect(t2Parts.length).toBeGreaterThan(0);
+    t2Parts.forEach(p => {
+      const dayDate = schedule.find(d => d.parts.includes(p))!.date;
+      expect(dayDate.getTime()).toBeGreaterThanOrEqual(startOfDay(pinnedDate).getTime());
+    });
+  });
 });

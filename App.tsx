@@ -15,7 +15,11 @@ import {
   Plus,
   ChevronDown,
   CalendarDays,
-  GripVertical
+  GripVertical,
+  Layers,
+  X,
+  ChevronsDownUp,
+  ChevronsUpDown
 } from 'lucide-react';
 import SettingsView from './components/SettingsView';
 import BudgetView from './components/BudgetView';
@@ -86,41 +90,115 @@ const MILESTONE_THEME_BADGE = [
   'bg-rose-50 text-rose-700 border-rose-200',
 ];
 
-interface SortableTaskRowProps {
+
+interface SortableMilestoneRowProps {
   id: string;
+  label: string;
   name: string;
-  assignee: Assignee;
-  estimateHours: number;
+  badgeClass: string;
+  dateRange: string;
+  totalHours: number;
+  doneHours: number;
+  totalEstimateHours: number;
+  onOpenDate: () => void;
+  onAddTask: () => void;
 }
 
-const SortableTaskRow: React.FC<SortableTaskRowProps> = ({ id, name, assignee, estimateHours }) => {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
+const SortableMilestoneRow: React.FC<SortableMilestoneRowProps> = ({
+  id, label, name, badgeClass, dateRange, totalHours, doneHours, totalEstimateHours, onOpenDate, onAddTask,
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+    opacity: isDragging ? 0.5 : 1,
   };
+  const pct = totalEstimateHours > 0 ? Math.round((doneHours / totalEstimateHours) * 100) : 0;
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center justify-between rounded border border-slate-200 bg-white px-2.5 py-2"
+      className="flex items-center gap-2 px-3 py-2"
     >
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-slate-800">{name}</p>
-        <p className="text-[11px] text-slate-500">
-          {assignee} • {estimateHours}t
-        </p>
-      </div>
+      {/* Drag handle */}
       <button
         type="button"
-        className="ml-3 inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-slate-500 hover:bg-slate-50"
-        aria-label="Dra for aa endre rekkefolge"
+        aria-label="Dra for å endre rekkefølge"
+        className="flex h-6 w-4 shrink-0 cursor-grab items-center justify-center rounded text-slate-300 hover:text-slate-500 active:cursor-grabbing"
         {...attributes}
         {...listeners}
       >
         <GripVertical size={14} />
       </button>
+      {/* Badge */}
+      <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badgeClass}`}>
+        {label}
+      </span>
+      {/* Name */}
+      <span className="flex-1 min-w-0 truncate text-sm font-semibold text-slate-800">{name}</span>
+      {/* Progress bar */}
+      {totalEstimateHours > 0 && (
+        <div className="flex items-center gap-1.5 shrink-0" title={`${doneHours}/${totalEstimateHours}t fullført`}>
+          <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full bg-slate-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+          </div>
+          <span className="text-[10px] text-slate-400 w-7 text-right">{pct}%</span>
+        </div>
+      )}
+      {/* Date + hours */}
+      <span className="shrink-0 text-[11px] text-slate-400 whitespace-nowrap">
+        {dateRange && <>{dateRange} · </>}{totalHours}t
+      </span>
+      {/* Actions */}
+      <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={onOpenDate}
+            className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
+          >
+            <CalendarDays size={11} />
+            Dato
+          </button>
+          <button
+            type="button"
+            onClick={onAddTask}
+            className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
+          >
+            <Plus size={11} />
+            Legg til oppgave
+          </button>
+      </div>
+    </div>
+  );
+};
+
+interface MilestoneSeparatorProps {
+  label: string;
+  name: string;
+  badgeClass: string;
+  doneHours: number;
+  totalEstimateHours: number;
+}
+
+const MilestoneSeparator: React.FC<MilestoneSeparatorProps> = ({ label, name, badgeClass, doneHours, totalEstimateHours }) => {
+  const pct = totalEstimateHours > 0 ? Math.round((doneHours / totalEstimateHours) * 100) : 0;
+  return (
+    <div className="flex items-center gap-2 py-1.5 -ml-9 pr-2">
+      <div className="flex-1 border-t border-dashed border-slate-200" />
+      <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badgeClass}`}>
+        {label}
+      </span>
+      <span className="text-[11px] text-slate-400 font-medium truncate max-w-[140px]">{name}</span>
+      {totalEstimateHours > 0 && (
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="w-16 h-1 bg-slate-200 rounded-full overflow-hidden">
+            <div className="h-full bg-slate-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+          </div>
+          <span className="text-[10px] text-slate-400">{pct}%</span>
+        </div>
+      )}
+      <div className="flex-1 border-t border-dashed border-slate-200" />
     </div>
   );
 };
@@ -130,7 +208,8 @@ const App: React.FC = () => {
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(new Set());
   const [activeTaskForDetail, setActiveTaskForDetail] = useState<{ taskId: string; milestoneId: string } | null>(null);
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Sidebar starts closed
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isMilestoneManagerOpen, setIsMilestoneManagerOpen] = useState(false);
   const [activeView, setActiveView] = useState<'timeline' | 'budget'>('timeline');
   const [laborRates, setLaborRates] = useState<Record<Assignee, number>>(DEFAULT_LABOR_RATES);
   const [actualCosts, setActualCosts] = useState<BudgetActuals>({
@@ -141,7 +220,6 @@ const App: React.FC = () => {
   const [isStorageHydrated, setIsStorageHydrated] = useState(false);
   const [activeMilestoneForAdd, setActiveMilestoneForAdd] = useState<string | null>(null);
   const [activeMilestoneForDate, setActiveMilestoneForDate] = useState<string | null>(null);
-  const [activeMilestoneForSort, setActiveMilestoneForSort] = useState<string | null>(null);
   const [draggedTimelineTask, setDraggedTimelineTask] = useState<{ taskId: string; milestoneId: string } | null>(null);
   const [timelineDropTarget, setTimelineDropTarget] = useState<{ taskId: string; position: 'before' | 'after' } | null>(null);
   const [newTaskName, setNewTaskName] = useState('');
@@ -228,6 +306,45 @@ const App: React.FC = () => {
     });
     return groups;
   }, [schedule]);
+
+  // First and last scheduled date + total hours per milestone — used in the
+  // milestone legend at the top of the timeline.
+  const milestoneSummaries = useMemo(() => {
+    const map = new Map<string, { firstDate: Date; lastDate: Date; totalHours: number }>();
+    schedule.forEach(day => {
+      day.parts.forEach(p => {
+        const existing = map.get(p.milestoneId);
+        if (existing) {
+          if (day.date < existing.firstDate) existing.firstDate = day.date;
+          if (day.date > existing.lastDate) existing.lastDate = day.date;
+          existing.totalHours += p.hoursSpent;
+        } else {
+          map.set(p.milestoneId, { firstDate: new Date(day.date), lastDate: new Date(day.date), totalHours: p.hoursSpent });
+        }
+      });
+    });
+    return milestones.map((m, idx) => {
+      const totalEstimateHours = m.tasks.reduce((s, t) => s + t.estimateHours, 0);
+      const doneHours = m.tasks.filter(t => t.completed).reduce((s, t) => s + t.estimateHours, 0);
+      return {
+        id: m.id,
+        name: m.name,
+        index: idx,
+        label: `M${idx + 1}`,
+        totalEstimateHours,
+        doneHours,
+        ...map.get(m.id),
+      };
+    }).filter(m => m.firstDate);
+  }, [schedule, milestones]);
+
+  const milestoneStartMap = useMemo(() =>
+    new Map(
+      (milestoneSummaries as Array<{ id: string; firstDate: Date; lastDate: Date; totalHours: number; index: number; label: string; name: string }>)
+        .map(m => [format(m.firstDate, 'yyyy-MM-dd'), m])
+    ),
+    [milestoneSummaries]
+  );
 
   const toggleWeek = (weekId: string) => {
     setCollapsedWeeks(prev => {
@@ -390,20 +507,15 @@ const App: React.FC = () => {
     setActiveMilestoneForDate(null);
   };
 
-  const handleSortTaskDragEnd = (event: DragEndEvent) => {
-    if (!activeMilestoneForSort) return;
+  const handleSortMilestoneDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-
-    setMilestones((prev) =>
-      prev.map((milestone) => {
-        if (milestone.id !== activeMilestoneForSort) return milestone;
-        const oldIndex = milestone.tasks.findIndex((task) => task.id === active.id);
-        const newIndex = milestone.tasks.findIndex((task) => task.id === over.id);
-        if (oldIndex < 0 || newIndex < 0) return milestone;
-        return { ...milestone, tasks: arrayMove(milestone.tasks, oldIndex, newIndex) };
-      })
-    );
+    setMilestones((prev) => {
+      const oldIndex = prev.findIndex((m) => m.id === active.id);
+      const newIndex = prev.findIndex((m) => m.id === over.id);
+      if (oldIndex < 0 || newIndex < 0) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
   };
 
   const handleTimelineTaskDragStart = (taskId: string, milestoneId: string) => {
@@ -650,125 +762,86 @@ const App: React.FC = () => {
         </header>
 
         {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto p-2 sm:p-3 md:p-4">
+          <div className="flex-1 overflow-y-auto p-2 sm:p-2 md:p-3">
             {activeView === 'timeline' && (
             <div className="max-w-6xl mx-auto">
+              {/* Toolbar: milestone manager + collapse/expand all */}
+              <div className="mb-2 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setIsMilestoneManagerOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50"
+                  title="Åpne milepæloversikt"
+                >
+                  <Layers size={13} />
+                  Milepæler
+                  <span className="ml-0.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+                    {milestoneSummaries.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allIds = new Set(groupedSchedule.map(g => g.weekId));
+                    const allCollapsed = groupedSchedule.every(g => collapsedWeeks.has(g.weekId));
+                    setCollapsedWeeks(allCollapsed ? new Set() : allIds);
+                  }}
+                  className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-400 shadow-sm hover:bg-slate-50 hover:text-slate-600"
+                  title={groupedSchedule.every(g => collapsedWeeks.has(g.weekId)) ? 'Utvid alle uker' : 'Kollaps alle uker'}
+                >
+                  {groupedSchedule.every(g => collapsedWeeks.has(g.weekId))
+                    ? <ChevronsUpDown size={13} />
+                    : <ChevronsDownUp size={13} />
+                  }
+                </button>
+              </div>
+
               {/* The Actual Timeline with Week Groups */}
-              <div className="space-y-4">
+              <div className="space-y-1">
                 {groupedSchedule.map((group) => {
                   const isCollapsed = collapsedWeeks.has(group.weekId);
-                  const milestoneWeekSummary = (() => {
-                    const summaryMap = new Map<string, { id: string; name: string; parts: number; hours: number; index: number; startDate?: Date }>();
-                    group.days.forEach((day) => {
-                      day.parts.forEach((part) => {
-                        const existing = summaryMap.get(part.milestoneId);
-                        if (existing) {
-                          existing.parts += 1;
-                          existing.hours += part.hoursSpent;
-                        } else {
-                          const milestoneMeta = milestoneById.get(part.milestoneId);
-                          summaryMap.set(part.milestoneId, {
-                            id: part.milestoneId,
-                            name: part.milestoneName,
-                            parts: 1,
-                            hours: part.hoursSpent,
-                            index: milestoneMeta?.index ?? 9999,
-                            startDate: milestoneMeta?.milestone.startDate,
-                          });
-                        }
-                      });
-                    });
-                    return Array.from(summaryMap.values()).sort((a, b) => a.index - b.index);
-                  })();
+                  const weekMilestoneBadges = group.days
+                    .map(d => milestoneStartMap.get(format(d.date, 'yyyy-MM-dd')))
+                    .filter(Boolean) as Array<{ label: string; index: number }>;
 
                   return (
                     <section key={group.weekId} className="relative">
-                      {/* Compact two-liner week header — line 1: week info, line 2: milestone badges */}
-                      <div className="sticky top-0 z-10 mb-2 bg-slate-100/95 rounded-md border border-slate-200/60">
-                        {/* Line 1: week number + month + summary + chevron */}
-                        <div
-                          onClick={() => toggleWeek(group.weekId)}
-                          className="flex cursor-pointer items-center justify-between px-2.5 py-1.5"
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className="px-2.5 py-0.5 bg-white border border-slate-200 rounded flex items-center gap-1.5">
-                              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Uke</span>
-                              <span className="text-sm font-bold text-slate-700 leading-none">{group.weekNumber}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                                {format(group.days[0].date, 'MMM yyyy', { locale: nb })}
-                              </span>
-                              <span className="text-[11px] text-slate-400">•</span>
-                              <span className="text-[11px] font-medium text-slate-500">
-                                {group.days.length} dager • {group.totalHours}t arbeid
-                              </span>
-                            </div>
+                      {/* Compact week header — single line */}
+                      <div
+                        onClick={() => toggleWeek(group.weekId)}
+                        className="sticky top-0 z-10 mb-1 flex cursor-pointer items-center justify-between rounded border border-slate-200/60 bg-slate-100/95 px-2.5 py-1.5"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-0.5">
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Uke</span>
+                            <span className="text-sm font-bold leading-none text-slate-700">{group.weekNumber}</span>
                           </div>
-                          <div className={`p-0.5 rounded-full bg-slate-200 text-slate-500 transition-transform duration-300 ${isCollapsed ? '-rotate-90' : ''}`}>
-                            <ChevronDown size={14} />
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              {format(group.days[0].date, 'MMM yyyy', { locale: nb })}
+                            </span>
+                            <span className="text-[11px] text-slate-400">•</span>
+                            <span className="text-[11px] font-medium text-slate-500">
+                              {group.days.length} dager • {group.totalHours}t arbeid
+                            </span>
                           </div>
+                          {weekMilestoneBadges.map(m => (
+                            <span
+                              key={m.label}
+                              className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${MILESTONE_THEME_BADGE[m.index % MILESTONE_THEME_BADGE.length]}`}
+                            >
+                              {m.label}
+                            </span>
+                          ))}
                         </div>
-
-                        {/* Line 2: milestone badges — always visible */}
-                        {milestoneWeekSummary.length > 0 && (
-                          <div className="flex flex-wrap items-center gap-1 border-t border-slate-200/70 px-2.5 py-1.5">
-                            {milestoneWeekSummary.map((milestoneSummary) => {
-                              const badgeClass =
-                                MILESTONE_THEME_BADGE[milestoneSummary.index % MILESTONE_THEME_BADGE.length];
-                              return (
-                                <div
-                                  key={milestoneSummary.id}
-                                  className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5"
-                                >
-                                  <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badgeClass}`}>
-                                    {milestoneSummary.name}
-                                  </span>
-                                  <span className="text-[10px] font-medium text-slate-400">
-                                    {milestoneSummary.parts} deler • {milestoneSummary.hours}t
-                                  </span>
-                                  {milestoneSummary.startDate && (
-                                    <span className="text-[10px] text-slate-400">
-                                      Start: {format(milestoneSummary.startDate, 'd. MMM', { locale: nb })}
-                                    </span>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setActiveMilestoneForSort(milestoneSummary.id); }}
-                                    className="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100"
-                                    title="Endre oppgaverekkefolge i milepael"
-                                  >
-                                    <GripVertical size={9} />
-                                    Rekkefolge
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); openMilestoneDateDialog(milestoneSummary.id); }}
-                                    className="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100"
-                                    title="Sett startdato for milepael"
-                                  >
-                                    <CalendarDays size={9} />
-                                    Dato
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); openAddTaskDialog(milestoneSummary.id); }}
-                                    className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 transition-all hover:border-slate-800 hover:bg-slate-800 hover:text-white"
-                                    title="Legg til oppgave i milepael"
-                                    aria-label="Legg til oppgave i milepael"
-                                    >
-                                      <Plus size={10} />
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                      </div>{/* end sticky two-liner header */}
+                        <div className={`p-0.5 rounded-full bg-slate-200 text-slate-500 transition-transform duration-300 ${isCollapsed ? '-rotate-90' : ''}`}>
+                          <ChevronDown size={14} />
+                        </div>
+                      </div>
 
                       {/* Day List */}
                       {!isCollapsed && (
-                        <div className="relative ml-4 space-y-3 border-l border-slate-300 pb-1 pl-4 sm:ml-5 sm:pl-5">
+                        <div className="relative ml-4 space-y-2 border-l border-slate-300 pb-1 pl-4 sm:ml-5 sm:pl-5">
                           {group.days.map((day, idx) => {
                             const isWeekend = day.date.getDay() === 0 || day.date.getDay() === 6;
                             const isToday = format(day.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
@@ -778,8 +851,19 @@ const App: React.FC = () => {
                               (p.equipment ?? []).map(eq => ({ ...eq, taskName: p.taskName }))
                             );
 
+                            const milestoneStart = milestoneStartMap.get(dayKey);
                             return (
                               <div key={idx} className="relative">
+                                {/* Milestone separator — shown on the first day of each milestone */}
+                                {milestoneStart && (
+                                  <MilestoneSeparator
+                                    label={milestoneStart.label}
+                                    name={milestoneStart.name}
+                                    badgeClass={MILESTONE_THEME_BADGE[milestoneStart.index % MILESTONE_THEME_BADGE.length]}
+                                    doneHours={(milestoneStart as { doneHours?: number }).doneHours ?? 0}
+                                    totalEstimateHours={(milestoneStart as { totalEstimateHours?: number }).totalEstimateHours ?? 0}
+                                  />
+                                )}
                                 {/* Timeline Node */}
                                 <div className={`absolute -left-[21px] top-1 w-4 h-4 rounded-full border border-white flex items-center justify-center ${
                                   isWeekend ? 'bg-slate-300 text-slate-500' : 'bg-slate-600 text-white'
@@ -1065,46 +1149,64 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {activeMilestoneForSort && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3">
-          <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white shadow-xl">
-            <div className="border-b border-slate-200 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Drag and drop</p>
-              <h3 className="text-sm font-semibold text-slate-900">
-                Oppgaverekkefolge: {milestoneById.get(activeMilestoneForSort)?.milestone.name}
-              </h3>
-            </div>
-            <div className="p-4">
-              <p className="mb-2 text-xs text-slate-500">
-                Dra i handtaket for aa endre rekkefolge. Tidsplanen oppdateres umiddelbart.
-              </p>
-              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleSortTaskDragEnd}>
-                <SortableContext
-                  items={(milestoneById.get(activeMilestoneForSort)?.milestone.tasks ?? []).map((task) => task.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="space-y-2">
-                    {(milestoneById.get(activeMilestoneForSort)?.milestone.tasks ?? []).map((task) => (
-                      <SortableTaskRow
-                        key={task.id}
-                        id={task.id}
-                        name={task.name}
-                        assignee={task.assignee}
-                        estimateHours={task.estimateHours}
-                      />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            </div>
-            <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-3">
+      {/* Milestone manager — slide-in drawer from the left */}
+      {isMilestoneManagerOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={() => setIsMilestoneManagerOpen(false)}
+          />
+          {/* Drawer */}
+          <div className="relative flex w-full max-w-2xl flex-col bg-white shadow-xl">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Layers size={16} className="text-slate-500" />
+                <span className="text-sm font-bold text-slate-800">Milepæler</span>
+              </div>
               <button
                 type="button"
-                onClick={() => setActiveMilestoneForSort(null)}
-                className="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                onClick={() => setIsMilestoneManagerOpen(false)}
+                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
               >
-                Lukk
+                <X size={16} />
               </button>
+            </div>
+            {/* Draggable milestone list */}
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+              <DndContext
+                sensors={dndSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleSortMilestoneDragEnd}
+              >
+                <SortableContext
+                  items={milestoneSummaries.map(m => m.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {milestoneSummaries.map(m => {
+                    const badgeClass = MILESTONE_THEME_BADGE[m.index % MILESTONE_THEME_BADGE.length];
+                    const dateRange = m.firstDate
+                      ? `${format(m.firstDate, 'd. MMM', { locale: nb })} – ${format(m.lastDate!, 'd. MMM', { locale: nb })}`
+                      : '';
+                    return (
+                      <SortableMilestoneRow
+                        key={m.id}
+                        id={m.id}
+                        label={m.label}
+                        name={m.name}
+                        badgeClass={badgeClass}
+                        dateRange={dateRange}
+                        totalHours={m.totalHours}
+                        doneHours={m.doneHours}
+                        totalEstimateHours={m.totalEstimateHours}
+                        onOpenDate={() => { setIsMilestoneManagerOpen(false); openMilestoneDateDialog(m.id); }}
+                        onAddTask={() => { setIsMilestoneManagerOpen(false); openAddTaskDialog(m.id); }}
+                      />
+                    );
+                  })}
+                </SortableContext>
+              </DndContext>
             </div>
           </div>
         </div>

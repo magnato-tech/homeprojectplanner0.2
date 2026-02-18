@@ -126,6 +126,7 @@ const SortableTaskRow: React.FC<SortableTaskRowProps> = ({ id, name, assignee, e
 const App: React.FC = () => {
   const [milestones, setMilestones] = useState<Milestone[]>(INITIAL_MILESTONES);
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(new Set());
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Sidebar starts closed
   const [activeView, setActiveView] = useState<'timeline' | 'budget'>('timeline');
   const [laborRates, setLaborRates] = useState<Record<Assignee, number>>(DEFAULT_LABOR_RATES);
@@ -230,6 +231,15 @@ const App: React.FC = () => {
       const next = new Set(prev);
       if (next.has(weekId)) next.delete(weekId);
       else next.add(weekId);
+      return next;
+    });
+  };
+
+  const toggleDay = (dayKey: string) => {
+    setExpandedDays(prev => {
+      const next = new Set(prev);
+      if (next.has(dayKey)) next.delete(dayKey);
+      else next.add(dayKey);
       return next;
     });
   };
@@ -736,7 +746,12 @@ const App: React.FC = () => {
                           {group.days.map((day, idx) => {
                             const isWeekend = day.date.getDay() === 0 || day.date.getDay() === 6;
                             const isToday = format(day.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
-                            
+                            const dayKey = format(day.date, 'yyyy-MM-dd');
+                            const isDayExpanded = expandedDays.has(dayKey);
+                            const dayEquipment = day.parts.flatMap(p =>
+                              (p.equipment ?? []).map(eq => ({ ...eq, taskName: p.taskName }))
+                            );
+
                             return (
                               <div key={idx} className="relative">
                                 {/* Timeline Node */}
@@ -746,25 +761,31 @@ const App: React.FC = () => {
                                   <Clock size={8} />
                                 </div>
 
-                                {/* Day Header */}
-                                <div className="mb-1.5 flex flex-col justify-between sm:flex-row sm:items-center">
+                                {/* Day Header — klikkbart for å ekspandere utstyrspanel */}
+                                <div
+                                  className="mb-1.5 flex flex-col justify-between sm:flex-row sm:items-center cursor-pointer select-none"
+                                  onClick={() => toggleDay(dayKey)}
+                                >
                                   <div>
                                     <h4 className={`text-sm font-semibold capitalize ${isWeekend ? 'text-slate-500' : 'text-slate-900'}`}>
                                       {format(day.date, 'EEEE d. MMMM', { locale: nb })}
                                       {isToday && <span className="ml-2 text-[10px] bg-slate-800 text-white px-2 py-0.5 rounded uppercase tracking-wide">I dag</span>}
                                     </h4>
                                   </div>
-
                                   <div className="mt-1 sm:mt-0 flex items-center gap-2 bg-white px-2 py-1 rounded-md border border-slate-200">
-                                     <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                        <div 
-                                          className="h-full bg-slate-600 transition-all duration-500" 
-                                          style={{ width: `${((day.totalCapacity - day.remainingCapacity) / day.totalCapacity) * 100}%` }}
-                                        />
-                                     </div>
-                                     <span className="text-[10px] text-slate-500 font-semibold uppercase whitespace-nowrap">
-                                       {day.totalCapacity - day.remainingCapacity} / {day.totalCapacity}t brukt
-                                     </span>
+                                    <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-slate-600 transition-all duration-500"
+                                        style={{ width: `${((day.totalCapacity - day.remainingCapacity) / day.totalCapacity) * 100}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-[10px] text-slate-500 font-semibold uppercase whitespace-nowrap">
+                                      {day.totalCapacity - day.remainingCapacity} / {day.totalCapacity}t brukt
+                                    </span>
+                                    <ChevronDown
+                                      size={13}
+                                      className={`text-slate-400 transition-transform duration-200 ${isDayExpanded ? 'rotate-180' : ''}`}
+                                    />
                                   </div>
                                 </div>
 
@@ -827,6 +848,37 @@ const App: React.FC = () => {
                                     </div>
                                   )}
                                 </div>
+
+                                {/* Ekspandert utstyrspanel */}
+                                {isDayExpanded && (
+                                  <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+                                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                                      Utstyr og materiell denne dagen
+                                    </p>
+                                    {dayEquipment.length === 0 ? (
+                                      <p className="text-xs italic text-slate-400">Ingen utstyr registrert på oppgavene denne dagen.</p>
+                                    ) : (
+                                      <div className="space-y-2">
+                                        {day.parts
+                                          .filter(p => (p.equipment ?? []).length > 0)
+                                          .map(p => (
+                                            <div key={p.taskId}>
+                                              <p className="text-[11px] font-semibold text-slate-600 mb-1">{p.taskName}</p>
+                                              <div className="space-y-0.5">
+                                                {(p.equipment ?? []).map(eq => (
+                                                  <div key={eq.id} className="flex items-center justify-between text-[11px] text-slate-500">
+                                                    <span>• {eq.name}</span>
+                                                    <span className="font-medium text-slate-600">{eq.quantity} {eq.unit}</span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          ))
+                                        }
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}

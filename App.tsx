@@ -608,6 +608,19 @@ const App: React.FC = () => {
     setMilestones(prev => prev.filter(m => m.id !== milestoneId));
   }, []);
 
+  const handleAddMilestone = useCallback((name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setMilestones(prev => [
+      ...prev,
+      {
+        id: `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        name: trimmed,
+        tasks: [],
+      },
+    ]);
+  }, []);
+
   const handleTimelineTaskDragStart = (taskId: string, milestoneId: string) => {
     setDraggedTimelineTask({ taskId, milestoneId });
   };
@@ -1328,6 +1341,32 @@ const App: React.FC = () => {
                   })}
                 </SortableContext>
               </DndContext>
+              {/* Add new milestone */}
+              <div className="border-t border-slate-200 px-3 py-2">
+                <form
+                  onSubmit={e => {
+                    e.preventDefault();
+                    const input = e.currentTarget.elements.namedItem('newMilestoneName') as HTMLInputElement;
+                    handleAddMilestone(input.value);
+                    input.value = '';
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <input
+                    name="newMilestoneName"
+                    type="text"
+                    placeholder="Ny milepæl..."
+                    className="flex-1 rounded border border-slate-200 px-2 py-1.5 text-sm text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                  />
+                  <button
+                    type="submit"
+                    className="inline-flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
+                  >
+                    <Plus size={12} />
+                    Legg til
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
         </div>

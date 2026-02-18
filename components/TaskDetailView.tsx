@@ -1,14 +1,28 @@
 import React, { useState, useCallback } from 'react';
-import { X, Plus, Trash2, ChevronDown } from 'lucide-react';
+import { X, Plus, Trash2, ChevronDown, Lock, AlertTriangle } from 'lucide-react';
+import { format } from 'date-fns';
 import { Task, Assignee, EquipmentItem, EquipmentCategory } from '../types';
 
 interface TaskDetailViewProps {
   task: Task;
   milestoneName: string;
   assigneeOptions: Assignee[];
+  scheduledDate?: Date;
+  isConflicted?: boolean;
+  isTimedConflict?: boolean;
+  conflictingAppointmentTime?: string;
+  pinnedHasNoTime?: boolean;
   onSave: (updatedTask: Task) => void;
   onClose: () => void;
 }
+
+const toDateInputValue = (date: Date) => format(date, 'yyyy-MM-dd');
+
+// Parses "yyyy-MM-dd" as LOCAL midnight — avoids UTC timezone offset bug.
+const parseLocalDate = (s: string): Date => {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
 
 const CATEGORY_LABELS: Record<EquipmentCategory, string> = {
   material: 'Materiell',
@@ -36,6 +50,11 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
   task,
   milestoneName,
   assigneeOptions,
+  scheduledDate,
+  isConflicted = false,
+  isTimedConflict = false,
+  conflictingAppointmentTime,
+  pinnedHasNoTime = false,
   onSave,
   onClose,
 }) => {
@@ -47,6 +66,25 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
   const [notes, setNotes] = useState(task.notes ?? '');
   const [equipment, setEquipment] = useState<EquipmentItem[]>(task.equipment ?? []);
   const [isNotesOpen, setIsNotesOpen] = useState(!!(task.notes));
+
+  // Hard-date (pinned appointment) state.
+  const [isHardDate, setIsHardDate] = useState(!!task.hardStartDate);
+  const [hardDateStr, setHardDateStr] = useState<string>(
+    task.hardStartDate
+      ? toDateInputValue(task.hardStartDate)
+      : scheduledDate
+      ? toDateInputValue(scheduledDate)
+      : ''
+  );
+
+  const handleStartTimeChange = (value: string) => {
+    setStartTime(value);
+    // Auto-pin when a specific start time is entered for the first time.
+    if (value && !isHardDate) {
+      setIsHardDate(true);
+      if (!hardDateStr && scheduledDate) setHardDateStr(toDateInputValue(scheduledDate));
+    }
+  };
 
   const handleAddRow = useCallback(() => {
     setEquipment(prev => [...prev, newEmptyItem()]);
@@ -66,6 +104,8 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
   );
 
   const handleSave = () => {
+    const hardStartDate =
+      isHardDate && hardDateStr ? parseLocalDate(hardDateStr) : undefined;
     onSave({
       ...task,
       name: name.trim() || task.name,
@@ -75,8 +115,11 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
       startTime: startTime || undefined,
       notes: notes.trim() || undefined,
       equipment,
+      hardStartDate,
     });
   };
+
+  const isPro = assignee !== 'Meg selv';
 
   const materialTotal = equipment
     .filter(i => i.category !== 'equipment')
@@ -115,6 +158,28 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto">
 
+          {/* Konflikt-banner — nivå 2 (dato-konflikt) */}
+          {isConflicted && (
+            <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3 sm:px-5">
+              <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-500" />
+              <p className="text-xs text-amber-800">
+                <span className="font-semibold">Oppgaven strekker seg forbi avtaledagen.</span>{' '}
+                Vurder å jobbe ekstra timer, be om hjelp, eller flytte avtaledatoen. Timene er ikke kuttet — du bestemmer selv løsningen.
+              </p>
+            </div>
+          )}
+
+          {/* Konflikt-banner — nivå 1 (tidspunkt-konflikt samme dag) */}
+          {!isConflicted && isTimedConflict && (
+            <div className="flex items-start gap-2 border-b border-yellow-200 bg-yellow-50 px-4 py-3 sm:px-5">
+              <AlertTriangle size={15} className="mt-0.5 shrink-0 text-yellow-500" />
+              <p className="text-xs text-yellow-800">
+                <span className="font-semibold">Avtalen starter kl. {conflictingAppointmentTime} samme dag.</span>{' '}
+                Sjekk at denne oppgaven rekker å bli ferdig før avtaletidspunktet.
+              </p>
+            </div>
+          )}
+
           {/* Oppgaveinfo */}
           <div className="border-b border-slate-100 px-4 py-4 sm:px-5">
             <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
@@ -148,7 +213,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
                 <input
                   type="time"
                   value={startTime}
-                  onChange={e => setStartTime(e.target.value)}
+                  onChange={e => handleStartTimeChange(e.target.value)}
                   className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
                 />
               </div>
@@ -163,6 +228,65 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
                   Ferdig
                 </label>
               </div>
+            </div>
+          </div>
+
+          {/* Avtale — fast dato */}
+          <div className={`border-b border-slate-100 px-4 py-3 sm:px-5 ${isHardDate ? 'bg-slate-50' : isPro ? 'bg-amber-50' : ''}`}>
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Toggle */}
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={isHardDate}
+                  onChange={e => setIsHardDate(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 accent-slate-700"
+                />
+                <span className={`font-semibold ${isHardDate ? 'text-slate-800' : isPro ? 'text-amber-700' : 'text-slate-600'}`}>
+                  {isHardDate ? (
+                    <span className="flex items-center gap-1"><Lock size={13} /> Fast avtale</span>
+                  ) : isPro ? (
+                    <span className="flex items-center gap-1"><AlertTriangle size={13} className="text-amber-500" /> Bekreft som fast avtale</span>
+                  ) : (
+                    'Fast avtale (valgfritt)'
+                  )}
+                </span>
+              </label>
+
+              {/* Datofelt — synlig kun når pinnet */}
+              {isHardDate && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={hardDateStr}
+                    onChange={e => setHardDateStr(e.target.value)}
+                    className="rounded border border-slate-300 px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  />
+                  {startTime && (
+                    <span className="text-sm text-slate-500">kl. {startTime}</span>
+                  )}
+                </div>
+              )}
+
+              {/* Forklaringstekst */}
+              <p className="w-full text-[11px] text-slate-400">
+                {isHardDate
+                  ? 'Oppgaven er låst til valgt dato og flyttes ikke automatisk av systemet.'
+                  : isPro
+                  ? 'Fagpersonoppgaver kan bli flyttet automatisk. Kryss av for å låse datoen når avtalen er bekreftet.'
+                  : 'Kryss av for å låse oppgaven til en bestemt dato som ikke kan flyttes automatisk.'}
+              </p>
+
+              {/* Hint: mangler klokkeslett på fast avtale */}
+              {isHardDate && !startTime && (
+                <div className="flex w-full items-start gap-1.5 rounded bg-slate-100 px-3 py-2">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0 text-slate-400" />
+                  <p className="text-[11px] text-slate-500">
+                    Klokkeslett er ikke satt. Uten klokkeslett kan systemet ikke varsle om oppgaver som strekker seg inn i avtalevinduet samme dag.
+                    Sett «Starter kl.» i feltene over for bedre konfliktdeteksjon.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

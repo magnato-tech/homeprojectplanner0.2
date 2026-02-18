@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Clock, GripVertical } from 'lucide-react';
+import { Clock, GripVertical, Lock, AlertTriangle } from 'lucide-react';
 import { TaskPart, Assignee } from '../types';
 
 interface TaskCardProps {
@@ -15,6 +15,12 @@ interface TaskCardProps {
   milestoneRingClass?: string;
   draggableTask?: boolean;
   dropMarkerPosition?: 'before' | 'after' | null;
+  isConflicted?: boolean;
+  isTimedConflict?: boolean;
+  conflictingAppointmentTime?: string;
+  isPinned?: boolean;
+  startTime?: string;
+  isUnconfirmedPro?: boolean;
   onTaskDragStart?: () => void;
   onTaskDragEnd?: () => void;
   onTaskDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
@@ -44,6 +50,12 @@ const TaskCard: React.FC<TaskCardProps> = ({
   milestoneRingClass = 'border-l-slate-300',
   draggableTask = false,
   dropMarkerPosition = null,
+  isConflicted = false,
+  isTimedConflict = false,
+  conflictingAppointmentTime,
+  isPinned = false,
+  startTime,
+  isUnconfirmedPro = false,
   onTaskDragStart,
   onTaskDragEnd,
   onTaskDragOver,
@@ -51,11 +63,18 @@ const TaskCard: React.FC<TaskCardProps> = ({
 }) => {
   const assigneeColor = getAssigneeColors(part.assignee);
 
+  // Conflict level overrides milestone ring colour.
+  const borderClass = isConflicted
+    ? 'border-l-amber-500'
+    : isTimedConflict
+    ? 'border-l-yellow-400'
+    : milestoneRingClass;
+
   return (
     <div
       className={`relative flex items-center gap-2 rounded border border-slate-200 border-l-4 bg-white px-2 py-1.5 transition-colors duration-200 hover:border-slate-300 ${
         dropMarkerPosition ? 'ring-1 ring-slate-300' : ''
-      } ${milestoneRingClass} ${isCompleted ? 'opacity-60' : ''}`}
+      } ${borderClass} ${isCompleted ? 'opacity-60' : ''}`}
       onDragOver={onTaskDragOver}
       onDrop={() => onTaskDrop?.()}
     >
@@ -147,6 +166,40 @@ const TaskCard: React.FC<TaskCardProps> = ({
           />
           <span className="text-[11px] text-slate-400">t tot</span>
         </div>
+      )}
+
+      {/* Status-ikoner: padlås (pinnet) med evt. klokkeslett, advarsel, konflikt */}
+      {isPinned && (
+        <span
+          className="shrink-0 flex items-center gap-0.5 cursor-help"
+          title="Fast avtale — flyttes ikke automatisk. Åpne oppgaven for å endre dato."
+        >
+          <Lock size={12} className="text-slate-400" />
+          {startTime && (
+            <span className="text-[11px] font-semibold text-slate-500">{startTime}</span>
+          )}
+        </span>
+      )}
+      {!isPinned && isUnconfirmedPro && (
+        <AlertTriangle
+          size={12}
+          className="shrink-0 text-amber-400 cursor-help"
+          title="Fagpersonoppgave uten bekreftet dato — kan bli flyttet automatisk. Åpne oppgaven for å bekrefte avtaledato."
+        />
+      )}
+      {isTimedConflict && !isConflicted && (
+        <AlertTriangle
+          size={12}
+          className="shrink-0 text-yellow-500 cursor-help"
+          title={`Avtalen starter kl. ${conflictingAppointmentTime} samme dag. Sjekk at denne oppgaven rekker å bli ferdig i tide.`}
+        />
+      )}
+      {isConflicted && (
+        <AlertTriangle
+          size={12}
+          className="shrink-0 text-amber-500 cursor-help"
+          title="Oppgaven strekker seg forbi avtaledagen. Vurder å jobbe ekstra timer, få hjelp, eller flytte avtaledatoen. Timene er ikke kuttet — du bestemmer selv løsningen."
+        />
       )}
     </div>
   );

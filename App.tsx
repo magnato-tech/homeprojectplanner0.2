@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { format, getISOWeek, getYear } from 'date-fns';
+import { format, getISOWeek, getYear, startOfDay } from 'date-fns';
 import { nb } from 'date-fns/locale';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -527,6 +527,140 @@ const App: React.FC = () => {
     };
   }, [milestones, laborRates]);
 
+  // Per-task metadata: conflict, pinned status, first/last scheduled date.
+  const taskMetaMap = useMemo(() => {
+    const firstScheduledDate: Record<string, Date> = {};
+    const lastScheduledDate: Record<string, Date> = {};
+
+    schedule.forEach(day => {
+      day.parts.forEach(p => {
+        if (!firstScheduledDate[p.taskId]) firstScheduledDate[p.taskId] = day.date;
+        lastScheduledDate[p.taskId] = day.date;
+      });
+    });
+
+    // --- Step 1: Build pinned-task lookup (across all milestones) ---
+    const pinnedTaskInfo = new Map<string, { startTime?: string }>();
+    milestones.forEach(m => m.tasks.forEach(t => {
+      if (t.hardStartDate) pinnedTaskInfo.set(t.id, { startTime: t.startTime });
+    }));
+
+    // --- Step 2: Hours-based conflict detection (per schedule day) ---
+    //
+    // The scheduler boosts a day's capacity to fit pinned tasks on top of normal
+    // work. This means date-only checks never fire when work stays within the
+    // boosted day. We therefore check HOURS directly:
+    //
+    //   availableHours = (appointmentTime − workDayStart)   if startTime is set
+    //                  = baseCapacity − pinnedHours          otherwise
+    //
+    // If nonPinnedHours > availableHours → warn all non-pinned tasks on that day.
+    // - With startTime set   → isTimedConflict (yellow — specific time pressure)
+    // - Without startTime    → isConflicted    (amber  — hours don't add up)
+    const WORK_START_HOUR = 8; // assumed work-day start
+    const parseTimeHours = (s: string): number => {
+      const [h, m] = s.split(':').map(Number);
+      return h + (m ?? 0) / 60;
+    };
+
+    const conflictedIds    = new Set<string>();
+    const timedConflictIds = new Set<string>();
+    const conflictTimes    = new Map<string, string>(); // taskId → klokkeslett
+
+    schedule.forEach(day => {
+      const baseCapacity = config.dayCapacities[day.date.getDay()] ?? 0;
+      if (baseCapacity === 0) return;
+
+      let pinnedHours = 0;
+      let nonPinnedHours = 0;
+      let earliestPinnedTime: string | undefined;
+      const nonPinnedIds: string[] = [];
+
+      day.parts.forEach(p => {
+        const info = pinnedTaskInfo.get(p.taskId);
+        if (info !== undefined) {
+          pinnedHours += p.hoursSpent;
+          if (info.startTime && (!earliestPinnedTime || info.startTime < earliestPinnedTime)) {
+            earliestPinnedTime = info.startTime;
+          }
+        } else {
+          nonPinnedHours += p.hoursSpent;
+          nonPinnedIds.push(p.taskId);
+        }
+      });
+
+      if (pinnedHours === 0 || nonPinnedIds.length === 0) return;
+
+      // Hours available for non-pinned work before the appointment.
+      const availableHours = earliestPinnedTime
+        ? Math.max(0, parseTimeHours(earliestPinnedTime) - WORK_START_HOUR)
+        : baseCapacity - pinnedHours;
+
+      if (nonPinnedHours > availableHours) {
+        nonPinnedIds.forEach(id => {
+          if (earliestPinnedTime) {
+            timedConflictIds.add(id);
+            if (!conflictTimes.has(id)) conflictTimes.set(id, earliestPinnedTime);
+          } else {
+            conflictedIds.add(id);
+          }
+        });
+      }
+    });
+
+    // --- Step 3: Date-overflow fallback (task runs past appointment day) ---
+    // Catches cases where a non-pinned task literally spills to the day after
+    // a downstream pinned appointment in the same milestone.
+    const isDateOverflow = (task: Task, milestoneId: string): boolean => {
+      if (task.hardStartDate) return false;
+      const lastDate = lastScheduledDate[task.id];
+      if (!lastDate) return false;
+      for (const m of milestones) {
+        if (m.id !== milestoneId) continue;
+        let found = false;
+        for (const t of m.tasks) {
+          if (t.id === task.id) { found = true; continue; }
+          if (found && t.hardStartDate) {
+            const wall = startOfDay(t.hardStartDate);
+            if (lastDate.getTime() > wall.getTime()) return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    // --- Step 4: Build the per-task metadata map ---
+    const map: Record<string, {
+      isConflicted: boolean;
+      isTimedConflict: boolean;
+      conflictingAppointmentTime?: string;
+      isPinned: boolean;
+      pinnedHasNoTime: boolean;
+      isUnconfirmedPro: boolean;
+      startTime?: string;
+      scheduledDate?: Date;
+    }> = {};
+
+    milestones.forEach(m => m.tasks.forEach(task => {
+      const isPinned = !!task.hardStartDate;
+      const isConflicted = conflictedIds.has(task.id) || isDateOverflow(task, m.id);
+      // isTimedConflict is only set when there is no stronger isConflicted signal.
+      const isTimedConflict = !isConflicted && timedConflictIds.has(task.id);
+      map[task.id] = {
+        isPinned,
+        isConflicted,
+        isTimedConflict,
+        conflictingAppointmentTime: conflictTimes.get(task.id),
+        pinnedHasNoTime: isPinned && !task.startTime,
+        isUnconfirmedPro: !isPinned && task.assignee !== 'Meg selv',
+        startTime: task.startTime,
+        scheduledDate: firstScheduledDate[task.id],
+      };
+    }));
+
+    return map;
+  }, [schedule, milestones, config]);
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row">
       {/* LEFT SIDEBAR: Functionality & Logic Controls */}
@@ -811,6 +945,12 @@ const App: React.FC = () => {
                                           milestoneRingClass={ringClass}
                                           draggableTask={isPrimaryTaskCard}
                                           dropMarkerPosition={dropMarkerPosition}
+                                          isConflicted={taskMetaMap[part.taskId]?.isConflicted ?? false}
+                                          isTimedConflict={taskMetaMap[part.taskId]?.isTimedConflict ?? false}
+                                          conflictingAppointmentTime={taskMetaMap[part.taskId]?.conflictingAppointmentTime}
+                                          isPinned={taskMetaMap[part.taskId]?.isPinned ?? false}
+                                          startTime={taskMetaMap[part.taskId]?.startTime}
+                                          isUnconfirmedPro={taskMetaMap[part.taskId]?.isUnconfirmedPro ?? false}
                                           onTaskDragStart={() => handleTimelineTaskDragStart(part.taskId, part.milestoneId)}
                                           onTaskDragEnd={clearTimelineDragState}
                                           onTaskDragOver={(event) => {
@@ -1078,6 +1218,11 @@ const App: React.FC = () => {
             task={task}
             milestoneName={milestone.name}
             assigneeOptions={assignees}
+            scheduledDate={taskMetaMap[task.id]?.scheduledDate}
+            isConflicted={taskMetaMap[task.id]?.isConflicted ?? false}
+            isTimedConflict={taskMetaMap[task.id]?.isTimedConflict ?? false}
+            conflictingAppointmentTime={taskMetaMap[task.id]?.conflictingAppointmentTime}
+            pinnedHasNoTime={taskMetaMap[task.id]?.pinnedHasNoTime ?? false}
             onSave={handleUpdateTask}
             onClose={() => setActiveTaskForDetail(null)}
           />

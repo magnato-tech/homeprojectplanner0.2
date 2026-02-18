@@ -19,6 +19,8 @@ export interface Task {
   equipment?: EquipmentItem[];
   hardStartDate?: Date;
   completed?: boolean;
+  startTime?: string;
+  notes?: string;
 }
 
 export interface Milestone {

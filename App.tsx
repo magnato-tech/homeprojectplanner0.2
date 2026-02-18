@@ -23,6 +23,7 @@ import { Assignee, BudgetActuals, Milestone, ProjectConfig, DaySchedule, Task } 
 import { INITIAL_MILESTONES, DEFAULT_CAPACITIES, DEFAULT_LABOR_RATES } from './constants';
 import { calculateSchedule } from './services/scheduler';
 import TaskCard from './components/TaskCard';
+import TaskDetailView from './components/TaskDetailView';
 
 const LOCAL_STORAGE_KEY = 'home-project-planner:v1';
 
@@ -126,6 +127,7 @@ const SortableTaskRow: React.FC<SortableTaskRowProps> = ({ id, name, assignee, e
 const App: React.FC = () => {
   const [milestones, setMilestones] = useState<Milestone[]>(INITIAL_MILESTONES);
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(new Set());
+  const [activeTaskForDetail, setActiveTaskForDetail] = useState<{ taskId: string; milestoneId: string } | null>(null);
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Sidebar starts closed
   const [activeView, setActiveView] = useState<'timeline' | 'budget'>('timeline');
@@ -278,35 +280,23 @@ const App: React.FC = () => {
   }, []);
 
   const handleEditTask = useCallback((taskId: string) => {
-    let taskToEdit: Task | undefined;
     for (const milestone of milestones) {
-      const found = milestone.tasks.find((task) => task.id === taskId);
-      if (found) {
-        taskToEdit = found;
-        break;
+      if (milestone.tasks.some(t => t.id === taskId)) {
+        setActiveTaskForDetail({ taskId, milestoneId: milestone.id });
+        return;
       }
     }
-    if (!taskToEdit) return;
+  }, [milestones]);
 
-    const nextName = window.prompt('Nytt navn på oppgave', taskToEdit.name);
-    if (nextName === null) return;
-
-    const nextHoursRaw = window.prompt('Nytt estimat (timer)', String(taskToEdit.estimateHours));
-    if (nextHoursRaw === null) return;
-    const nextHours = Number(nextHoursRaw);
-    if (!Number.isFinite(nextHours) || nextHours <= 0) return;
-
-    setMilestones((prev) =>
-      prev.map((milestone) => ({
-        ...milestone,
-        tasks: milestone.tasks.map((task) =>
-          task.id === taskId
-            ? { ...task, name: nextName.trim() || task.name, estimateHours: Math.max(1, nextHours) }
-            : task
-        ),
+  const handleUpdateTask = useCallback((updatedTask: Task) => {
+    setMilestones(prev =>
+      prev.map(m => ({
+        ...m,
+        tasks: m.tasks.map(t => t.id === updatedTask.id ? updatedTask : t),
       }))
     );
-  }, [milestones]);
+    setActiveTaskForDetail(null);
+  }, []);
 
   const handleUpdateCapacity = (day: number, hours: number) => {
     setConfig(prev => ({
@@ -1077,6 +1067,22 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Oppgave-detaljmodal */}
+      {activeTaskForDetail && (() => {
+        const milestone = milestones.find(m => m.id === activeTaskForDetail.milestoneId);
+        const task = milestone?.tasks.find(t => t.id === activeTaskForDetail.taskId);
+        if (!task || !milestone) return null;
+        return (
+          <TaskDetailView
+            task={task}
+            milestoneName={milestone.name}
+            assigneeOptions={assignees}
+            onSave={handleUpdateTask}
+            onClose={() => setActiveTaskForDetail(null)}
+          />
+        );
+      })()}
 
       {/* Floating chain reaction hint */}
       <div className="fixed bottom-6 right-6 z-50 pointer-events-none hidden md:block">

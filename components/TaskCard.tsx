@@ -35,7 +35,7 @@ const getAssigneeColors = (assignee: Assignee) => {
 const TaskCard: React.FC<TaskCardProps> = ({
   part,
   onEstimateChange,
-  onEditTask: _onEditTask,
+  onEditTask,
   onToggleCompleted,
   onAssigneeChange,
   assigneeOptions,
@@ -100,8 +100,12 @@ const TaskCard: React.FC<TaskCardProps> = ({
         title="Ferdig"
       />
 
-      {/* Oppgavenavn — tar all ledig plass */}
-      <span className={`flex-1 min-w-0 truncate text-sm font-semibold leading-tight ${isCompleted ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+      {/* Oppgavenavn — tar all ledig plass, klikkbart for å åpne detaljvisning */}
+      <span
+        className={`flex-1 min-w-0 truncate text-sm font-semibold leading-tight cursor-pointer hover:underline hover:text-slate-600 ${isCompleted ? 'text-slate-400 line-through' : 'text-slate-800'}`}
+        onClick={() => onEditTask(part.taskId)}
+        title="Åpne oppgavedetaljer"
+      >
         {part.taskName}
       </span>
 

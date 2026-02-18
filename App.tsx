@@ -683,90 +683,79 @@ const App: React.FC = () => {
 
                   return (
                     <section key={group.weekId} className="relative">
-                      {/* Week Header / Toggle */}
-                      <div 
-                        onClick={() => toggleWeek(group.weekId)}
-                        className="sticky top-0 z-10 mb-2 flex cursor-pointer items-center justify-between bg-slate-100/95 py-1.5"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="px-3 py-1 bg-white border border-slate-200 rounded-md flex items-center gap-2">
-                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Uke</span>
-                            <span className="text-sm font-semibold text-slate-700 leading-none">{group.weekNumber}</span>
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
-                              {format(group.days[0].date, 'MMM yyyy', { locale: nb })}
-                            </p>
-                            {isCollapsed && (
-                              <p className="text-[11px] font-medium text-slate-500">
+                      {/* Compact two-liner week header — line 1: week info, line 2: milestone badges */}
+                      <div className="sticky top-0 z-10 mb-2 bg-slate-100/95 rounded-md border border-slate-200/60">
+                        {/* Line 1: week number + month + summary + chevron */}
+                        <div
+                          onClick={() => toggleWeek(group.weekId)}
+                          className="flex cursor-pointer items-center justify-between px-2.5 py-1.5"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="px-2.5 py-0.5 bg-white border border-slate-200 rounded flex items-center gap-1.5">
+                              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Uke</span>
+                              <span className="text-sm font-bold text-slate-700 leading-none">{group.weekNumber}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                                {format(group.days[0].date, 'MMM yyyy', { locale: nb })}
+                              </span>
+                              <span className="text-[11px] text-slate-400">•</span>
+                              <span className="text-[11px] font-medium text-slate-500">
                                 {group.days.length} dager • {group.totalHours}t arbeid
-                              </p>
-                            )}
+                              </span>
+                            </div>
+                          </div>
+                          <div className={`p-0.5 rounded-full bg-slate-200 text-slate-500 transition-transform duration-300 ${isCollapsed ? '-rotate-90' : ''}`}>
+                            <ChevronDown size={14} />
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          {!isCollapsed && (
-                             <span className="hidden md:inline text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
-                               {group.totalHours}t planlagt
-                             </span>
-                          )}
-                          <div className={`p-1 rounded-full bg-slate-200 text-slate-500 transition-transform duration-300 ${isCollapsed ? '-rotate-90' : ''}`}>
-                            <ChevronDown size={16} />
-                          </div>
-                        </div>
-                      </div>
-
-                      {milestoneWeekSummary.length > 0 && (
-                        <div className="mb-2 ml-4 sm:ml-5">
-                          <div className="rounded-md border border-slate-200 bg-white px-2.5 py-2">
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                              Milepæler i uke {group.weekNumber}
-                            </p>
-                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                              {milestoneWeekSummary.map((milestoneSummary) => {
-                                const badgeClass =
-                                  MILESTONE_THEME_BADGE[milestoneSummary.index % MILESTONE_THEME_BADGE.length];
-                                return (
-                                  <div
-                                    key={milestoneSummary.id}
-                                    className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-1.5 py-1"
+                        {/* Line 2: milestone badges — always visible */}
+                        {milestoneWeekSummary.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1 border-t border-slate-200/70 px-2.5 py-1.5">
+                            {milestoneWeekSummary.map((milestoneSummary) => {
+                              const badgeClass =
+                                MILESTONE_THEME_BADGE[milestoneSummary.index % MILESTONE_THEME_BADGE.length];
+                              return (
+                                <div
+                                  key={milestoneSummary.id}
+                                  className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5"
+                                >
+                                  <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badgeClass}`}>
+                                    {milestoneSummary.name}
+                                  </span>
+                                  <span className="text-[10px] font-medium text-slate-400">
+                                    {milestoneSummary.parts} deler • {milestoneSummary.hours}t
+                                  </span>
+                                  {milestoneSummary.startDate && (
+                                    <span className="text-[10px] text-slate-400">
+                                      Start: {format(milestoneSummary.startDate, 'd. MMM', { locale: nb })}
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setActiveMilestoneForSort(milestoneSummary.id); }}
+                                    className="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100"
+                                    title="Endre oppgaverekkefolge i milepael"
                                   >
-                                    <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badgeClass}`}>
-                                      {milestoneSummary.name}
-                                    </span>
-                                    <span className="text-[10px] font-medium text-slate-500">
-                                      {milestoneSummary.parts} deler • {milestoneSummary.hours}t
-                                    </span>
-                                    {milestoneSummary.startDate && (
-                                      <span className="text-[10px] font-medium text-slate-500">
-                                        Start: {format(milestoneSummary.startDate, 'd. MMM', { locale: nb })}
-                                      </span>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => setActiveMilestoneForSort(milestoneSummary.id)}
-                                      className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-100"
-                                      title="Endre oppgaverekkefolge i milepael"
-                                    >
-                                      <GripVertical size={10} />
-                                      Rekkefolge
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => openMilestoneDateDialog(milestoneSummary.id)}
-                                      className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-100"
-                                      title="Sett startdato for milepael"
-                                    >
-                                      <CalendarDays size={10} />
-                                      Dato
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => openAddTaskDialog(milestoneSummary.id)}
-                                      className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 transition-all hover:scale-105 hover:border-slate-800 hover:bg-slate-800 hover:text-white"
-                                      title="Legg til oppgave i milepael"
-                                      aria-label="Legg til oppgave i milepael"
+                                    <GripVertical size={9} />
+                                    Rekkefolge
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); openMilestoneDateDialog(milestoneSummary.id); }}
+                                    className="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100"
+                                    title="Sett startdato for milepael"
+                                  >
+                                    <CalendarDays size={9} />
+                                    Dato
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); openAddTaskDialog(milestoneSummary.id); }}
+                                    className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 transition-all hover:border-slate-800 hover:bg-slate-800 hover:text-white"
+                                    title="Legg til oppgave i milepael"
+                                    aria-label="Legg til oppgave i milepael"
                                     >
                                       <Plus size={10} />
                                     </button>
@@ -774,9 +763,8 @@ const App: React.FC = () => {
                                 );
                               })}
                             </div>
-                          </div>
-                        </div>
-                      )}
+                          )}
+                      </div>{/* end sticky two-liner header */}
 
                       {/* Day List */}
                       {!isCollapsed && (

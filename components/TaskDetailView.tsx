@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { X, Plus, Trash2, ChevronDown, Lock, AlertTriangle } from 'lucide-react';
+import { X, Plus, Trash2, ChevronDown, Lock, LockOpen, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { Task, Assignee, EquipmentItem, EquipmentCategory } from '../types';
 
@@ -13,6 +13,7 @@ interface TaskDetailViewProps {
   conflictingAppointmentTime?: string;
   pinnedHasNoTime?: boolean;
   onSave: (updatedTask: Task) => void;
+  onDelete: () => void;
   onClose: () => void;
 }
 
@@ -56,6 +57,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
   conflictingAppointmentTime,
   pinnedHasNoTime = false,
   onSave,
+  onDelete,
   onClose,
 }) => {
   const [name, setName] = useState(task.name);
@@ -232,7 +234,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
           </div>
 
           {/* Avtale — fast dato */}
-          <div className={`border-b border-slate-100 px-4 py-3 sm:px-5 ${isHardDate ? 'bg-slate-50' : isPro ? 'bg-amber-50' : ''}`}>
+          <div className={`border-b border-slate-100 px-4 py-3 sm:px-5 ${isHardDate ? 'bg-red-50/40' : isPro ? 'bg-emerald-50/60' : ''}`}>
             <div className="flex flex-wrap items-center gap-3">
               {/* Toggle */}
               <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
@@ -240,15 +242,24 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
                   type="checkbox"
                   checked={isHardDate}
                   onChange={e => setIsHardDate(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 accent-slate-700"
+                  className="h-4 w-4 rounded border-slate-300 accent-red-600"
                 />
-                <span className={`font-semibold ${isHardDate ? 'text-slate-800' : isPro ? 'text-amber-700' : 'text-slate-600'}`}>
+                <span className={`font-semibold ${isHardDate ? 'text-red-700' : isPro ? 'text-emerald-700' : 'text-slate-600'}`}>
                   {isHardDate ? (
-                    <span className="flex items-center gap-1"><Lock size={13} /> Fast avtale</span>
+                    <span className="flex items-center gap-1.5">
+                      <Lock size={13} className="text-red-500" />
+                      Fast avtale — låst dato
+                    </span>
                   ) : isPro ? (
-                    <span className="flex items-center gap-1"><AlertTriangle size={13} className="text-amber-500" /> Bekreft som fast avtale</span>
+                    <span className="flex items-center gap-1.5">
+                      <LockOpen size={13} className="text-emerald-500" />
+                      Bekreft som fast avtale
+                    </span>
                   ) : (
-                    'Fast avtale (valgfritt)'
+                    <span className="flex items-center gap-1.5">
+                      <LockOpen size={13} className="text-slate-400" />
+                      Fast avtale (valgfritt)
+                    </span>
                   )}
                 </span>
               </label>
@@ -260,10 +271,10 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
                     type="date"
                     value={hardDateStr}
                     onChange={e => setHardDateStr(e.target.value)}
-                    className="rounded border border-slate-300 px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                    className="rounded border border-red-200 px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-200"
                   />
                   {startTime && (
-                    <span className="text-sm text-slate-500">kl. {startTime}</span>
+                    <span className="text-sm font-medium text-red-600">kl. {startTime}</span>
                   )}
                 </div>
               )}
@@ -279,9 +290,9 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
 
               {/* Hint: mangler klokkeslett på fast avtale */}
               {isHardDate && !startTime && (
-                <div className="flex w-full items-start gap-1.5 rounded bg-slate-100 px-3 py-2">
-                  <AlertTriangle size={13} className="mt-0.5 shrink-0 text-slate-400" />
-                  <p className="text-[11px] text-slate-500">
+                <div className="flex w-full items-start gap-1.5 rounded bg-red-50 border border-red-100 px-3 py-2">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0 text-red-400" />
+                  <p className="text-[11px] text-red-600">
                     Klokkeslett er ikke satt. Uten klokkeslett kan systemet ikke varsle om oppgaver som strekker seg inn i avtalevinduet samme dag.
                     Sett «Starter kl.» i feltene over for bedre konfliktdeteksjon.
                   </p>
@@ -529,21 +540,33 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:px-5">
+        <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-3 sm:px-5">
           <button
             type="button"
-            onClick={onClose}
-            className="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+            onClick={() => {
+              if (window.confirm(`Slett "${task.name}"? Dette kan ikke angres.`)) onDelete();
+            }}
+            className="inline-flex items-center gap-1.5 rounded border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
           >
-            Avbryt
+            <Trash2 size={12} />
+            Slett oppgave
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            className="rounded bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
-          >
-            Lagre
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+            >
+              Avbryt
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              className="rounded bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
+            >
+              Lagre
+            </button>
+          </div>
         </div>
       </div>
     </div>

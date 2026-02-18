@@ -1,6 +1,6 @@
 
-import React from 'react';
-import { Clock, GripVertical, Lock, AlertTriangle } from 'lucide-react';
+import React, { useState } from 'react';
+import { Clock, GripVertical, Lock, LockOpen, AlertTriangle } from 'lucide-react';
 import { TaskPart, Assignee } from '../types';
 
 interface TaskCardProps {
@@ -29,12 +29,12 @@ interface TaskCardProps {
 
 const getAssigneeColors = (assignee: Assignee) => {
   switch (assignee) {
-    case 'Meg selv':  return 'text-slate-700';
-    case 'Snekker':   return 'text-blue-700';
-    case 'Rørlegger': return 'text-emerald-700';
-    case 'Elektriker':return 'text-violet-700';
-    case 'Maler':     return 'text-rose-700';
-    default:          return 'text-slate-700';
+    case 'Meg selv':   return 'text-slate-700';
+    case 'Snekker':    return 'text-blue-700';
+    case 'Rørlegger':  return 'text-emerald-700';
+    case 'Elektriker': return 'text-violet-700';
+    case 'Maler':      return 'text-rose-700';
+    default:           return 'text-slate-700';
   }
 };
 
@@ -61,18 +61,29 @@ const TaskCard: React.FC<TaskCardProps> = ({
   onTaskDragOver,
   onTaskDrop,
 }) => {
+  const [showStatusHint, setShowStatusHint] = useState(false);
   const assigneeColor = getAssigneeColors(part.assignee);
 
-  // Conflict level overrides milestone ring colour.
   const borderClass = isConflicted
     ? 'border-l-amber-500'
     : isTimedConflict
     ? 'border-l-yellow-400'
     : milestoneRingClass;
 
+  // Conflict message — used for AlertTriangle icon (timing/overflow conflicts only)
+  const conflictMessage = isConflicted
+    ? 'Oppgaven strekker seg forbi avtaledagen. Vurder å jobbe ekstra timer, få hjelp, eller flytte avtaledatoen.'
+    : isTimedConflict
+    ? `Avtalen starter kl. ${conflictingAppointmentTime} samme dag. Sjekk at oppgaven rekker å bli ferdig i tide.`
+    : null;
+
+  const conflictIconColor = isConflicted ? 'text-amber-500' : 'text-yellow-500';
+  const hasConflictIcon = isConflicted || isTimedConflict;
+  const hasUnconfirmedPro = !isPinned && isUnconfirmedPro;
+
   return (
     <div
-      className={`relative flex items-center gap-2 rounded border border-slate-200 border-l-4 bg-white px-2 py-1.5 transition-colors duration-200 hover:border-slate-300 ${
+      className={`relative rounded border border-slate-200 border-l-4 bg-white transition-colors duration-200 hover:border-slate-300 ${
         dropMarkerPosition ? 'ring-1 ring-slate-300' : ''
       } ${borderClass} ${isCompleted ? 'opacity-60' : ''}`}
       onDragOver={onTaskDragOver}
@@ -92,114 +103,182 @@ const TaskCard: React.FC<TaskCardProps> = ({
         </>
       )}
 
-      {/* Drag handle */}
-      {draggableTask && (
-        <div
-          draggable
-          onDragStart={(event) => {
-            event.dataTransfer.effectAllowed = 'move';
-            event.dataTransfer.setData('text/plain', part.taskId);
-            onTaskDragStart?.();
-          }}
-          onDragEnd={() => onTaskDragEnd?.()}
-          className="shrink-0 inline-flex h-5 w-5 items-center justify-center rounded border border-slate-200 bg-slate-50 text-slate-400 cursor-grab active:cursor-grabbing hover:bg-slate-100"
-          title="Dra for å endre rekkefølge"
-          aria-label="Dra for å endre rekkefølge"
-        >
-          <GripVertical size={12} />
-        </div>
-      )}
+      {/* ── Primary row (both mobile and desktop) ── */}
+      <div className="flex items-center gap-2 px-2 py-2">
 
-      {/* Ferdig-avkryssing */}
-      <input
-        type="checkbox"
-        checked={isCompleted}
-        onChange={(e) => onToggleCompleted(part.taskId, e.target.checked)}
-        className="shrink-0 h-3.5 w-3.5 rounded border-slate-300 accent-emerald-600"
-        title="Ferdig"
-      />
+        {/* Drag handle — hidden on mobile (HTML5 DnD unreliable on touch) */}
+        {draggableTask && (
+          <div
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('text/plain', part.taskId);
+              onTaskDragStart?.();
+            }}
+            onDragEnd={() => onTaskDragEnd?.()}
+            className="hidden sm:inline-flex shrink-0 h-5 w-5 items-center justify-center rounded border border-slate-200 bg-slate-50 text-slate-400 cursor-grab active:cursor-grabbing hover:bg-slate-100"
+            aria-label="Dra for å endre rekkefølge"
+          >
+            <GripVertical size={12} />
+          </div>
+        )}
 
-      {/* Oppgavenavn — tar all ledig plass, klikkbart for å åpne detaljvisning */}
-      <span
-        className={`flex-1 min-w-0 truncate text-sm font-semibold leading-tight cursor-pointer hover:underline hover:text-slate-600 ${isCompleted ? 'text-slate-400 line-through' : 'text-slate-800'}`}
-        onClick={() => onEditTask(part.taskId)}
-        title="Åpne oppgavedetaljer"
-      >
-        {part.taskName}
-      </span>
-
-      {/* Del X av Y — vises kun ved flerdelte oppgaver */}
-      {part.totalParts > 1 && (
-        <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
-          {part.partIndex}/{part.totalParts}
-        </span>
-      )}
-
-      {/* Ansvarlig-dropdown */}
-      <select
-        value={part.assignee}
-        onChange={(e) => onAssigneeChange(part.taskId, e.target.value as Assignee)}
-        className={`shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium ${assigneeColor} focus:outline-none focus:ring-1 focus:ring-slate-300`}
-        title="Velg ansvarlig"
-      >
-        {assigneeOptions.map((assignee) => (
-          <option key={assignee} value={assignee}>{assignee}</option>
-        ))}
-      </select>
-
-      {/* Timer brukt i dag */}
-      <span className="shrink-0 flex items-center gap-1 text-[11px] font-medium text-slate-500">
-        <Clock size={11} className="opacity-50" />
-        {part.hoursSpent}t
-      </span>
-
-      {/* Totalt estimat — kun på første del av oppgaven */}
-      {part.partIndex === 1 && (
-        <div className="shrink-0 flex items-center gap-1">
+        {/* Checkbox — large touch target on mobile */}
+        <label className="shrink-0 flex items-center justify-center w-8 h-8 sm:w-auto sm:h-auto -m-1 sm:m-0 cursor-pointer">
           <input
-            type="number"
-            min="1"
-            value={currentEstimate}
-            onChange={(e) => onEstimateChange(part.taskId, parseInt(e.target.value) || 0)}
-            className="w-12 px-1.5 py-0.5 text-[11px] font-semibold bg-white border border-slate-300 rounded focus:ring-1 focus:ring-slate-300 focus:outline-none text-center"
-            title="Totalt estimat (timer)"
+            type="checkbox"
+            checked={isCompleted}
+            onChange={(e) => onToggleCompleted(part.taskId, e.target.checked)}
+            className="h-4 w-4 sm:h-3.5 sm:w-3.5 rounded border-slate-300 accent-emerald-600 cursor-pointer"
           />
-          <span className="text-[11px] text-slate-400">t tot</span>
-        </div>
-      )}
+        </label>
 
-      {/* Status-ikoner: padlås (pinnet) med evt. klokkeslett, advarsel, konflikt */}
-      {isPinned && (
-        <span
-          className="shrink-0 flex items-center gap-0.5 cursor-help"
-          title="Fast avtale — flyttes ikke automatisk. Åpne oppgaven for å endre dato."
+        {/* Task name — tappable to open detail */}
+        <button
+          type="button"
+          onClick={() => onEditTask(part.taskId)}
+          className={`flex-1 min-w-0 text-left text-sm font-semibold leading-tight hover:underline ${
+            isCompleted ? 'text-slate-400 line-through' : 'text-slate-800'
+          }`}
         >
-          <Lock size={12} className="text-slate-400" />
-          {startTime && (
-            <span className="text-[11px] font-semibold text-slate-500">{startTime}</span>
-          )}
+          <span className="block truncate">
+            {part.taskName}
+            {/* Part badge inline on mobile */}
+            {part.totalParts > 1 && (
+              <span className="sm:hidden ml-1.5 text-[10px] font-normal text-slate-400">
+                {part.partIndex}/{part.totalParts}
+              </span>
+            )}
+          </span>
+        </button>
+
+        {/* Part badge — desktop only */}
+        {part.totalParts > 1 && (
+          <span className="hidden sm:inline-flex shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+            {part.partIndex}/{part.totalParts}
+          </span>
+        )}
+
+        {/* Assignee dropdown — desktop only */}
+        <select
+          value={part.assignee}
+          onChange={(e) => onAssigneeChange(part.taskId, e.target.value as Assignee)}
+          className={`hidden sm:block shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium ${assigneeColor} focus:outline-none focus:ring-1 focus:ring-slate-300`}
+          title="Velg ansvarlig"
+        >
+          {assigneeOptions.map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
+        </select>
+
+        {/* Hours today — desktop only */}
+        <span className="hidden sm:flex shrink-0 items-center gap-1 text-[11px] font-medium text-slate-500">
+          <Clock size={11} className="opacity-50" />
+          {part.hoursSpent}t
         </span>
-      )}
-      {!isPinned && isUnconfirmedPro && (
-        <AlertTriangle
-          size={12}
-          className="shrink-0 text-amber-400 cursor-help"
-          title="Fagpersonoppgave uten bekreftet dato — kan bli flyttet automatisk. Åpne oppgaven for å bekrefte avtaledato."
-        />
-      )}
-      {isTimedConflict && !isConflicted && (
-        <AlertTriangle
-          size={12}
-          className="shrink-0 text-yellow-500 cursor-help"
-          title={`Avtalen starter kl. ${conflictingAppointmentTime} samme dag. Sjekk at denne oppgaven rekker å bli ferdig i tide.`}
-        />
-      )}
-      {isConflicted && (
-        <AlertTriangle
-          size={12}
-          className="shrink-0 text-amber-500 cursor-help"
-          title="Oppgaven strekker seg forbi avtaledagen. Vurder å jobbe ekstra timer, få hjelp, eller flytte avtaledatoen. Timene er ikke kuttet — du bestemmer selv løsningen."
-        />
+
+        {/* Estimate input — desktop only, first part */}
+        {part.partIndex === 1 && (
+          <div className="hidden sm:flex shrink-0 items-center gap-1">
+            <input
+              type="number"
+              min="1"
+              value={currentEstimate}
+              onChange={(e) => onEstimateChange(part.taskId, parseInt(e.target.value) || 0)}
+              className="w-12 px-1.5 py-0.5 text-[11px] font-semibold bg-white border border-slate-300 rounded focus:ring-1 focus:ring-slate-300 focus:outline-none text-center"
+              title="Totalt estimat (timer)"
+            />
+            <span className="text-[11px] text-slate-400">t tot</span>
+          </div>
+        )}
+
+        {/* Pinned indicator — red closed lock = hard appointment, won't move */}
+        {isPinned && (
+          <span
+            className="shrink-0 flex items-center gap-0.5 cursor-help"
+            title="Fast avtale — flyttes ikke automatisk av systemet."
+          >
+            <Lock size={12} className="text-red-500" />
+            {startTime && (
+              <span className="text-[11px] font-semibold text-red-500">{startTime}</span>
+            )}
+          </span>
+        )}
+
+        {/* Unconfirmed pro — green open lock */}
+        {hasUnconfirmedPro && (
+          <button
+            type="button"
+            className="shrink-0"
+            title="Åpen fagpersonavtale — dato ikke bekreftet, kan flyttes automatisk. Åpne oppgaven og sett fast dato for å låse den."
+            aria-label="Åpen fagpersonavtale"
+            onClick={() => setShowStatusHint(p => !p)}
+          >
+            <LockOpen size={13} className="text-emerald-500" />
+          </button>
+        )}
+
+        {/* Conflict icon — triangle for timing/overflow conflicts */}
+        {hasConflictIcon && (
+          <button
+            type="button"
+            className="shrink-0"
+            title={conflictMessage ?? undefined}
+            aria-label="Vis konfliktvarsel"
+            onClick={() => setShowStatusHint(p => !p)}
+          >
+            <AlertTriangle size={13} className={conflictIconColor} />
+          </button>
+        )}
+      </div>
+
+      {/* ── Secondary row — mobile only ── */}
+      <div className="flex sm:hidden items-center gap-2 px-2 pb-2 -mt-1">
+        {/* Spacer to align with checkbox column */}
+        <div className="w-7 shrink-0" />
+
+        <select
+          value={part.assignee}
+          onChange={(e) => onAssigneeChange(part.taskId, e.target.value as Assignee)}
+          className={`shrink-0 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium ${assigneeColor} focus:outline-none focus:ring-1 focus:ring-slate-300`}
+        >
+          {assigneeOptions.map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
+        </select>
+
+        <span className="flex items-center gap-0.5 text-[11px] text-slate-400">
+          <Clock size={10} className="opacity-60" />
+          {part.hoursSpent}t i dag
+        </span>
+
+        {part.partIndex === 1 && (
+          <div className="flex items-center gap-1 ml-auto">
+            <input
+              type="number"
+              min="1"
+              value={currentEstimate}
+              onChange={(e) => onEstimateChange(part.taskId, parseInt(e.target.value) || 0)}
+              className="w-14 px-2 py-1 text-xs font-semibold bg-white border border-slate-300 rounded focus:ring-1 focus:ring-slate-300 focus:outline-none text-center"
+            />
+            <span className="text-[11px] text-slate-400">t tot</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Status hint — mobile tap-to-reveal ── */}
+      {showStatusHint && (conflictMessage || hasUnconfirmedPro) && (
+        <div className="sm:hidden px-2 pb-2">
+          <p className={`text-[11px] rounded px-2 py-1.5 border ${
+            isConflicted
+              ? 'bg-amber-50 text-amber-800 border-amber-200'
+              : isTimedConflict
+              ? 'bg-yellow-50 text-yellow-800 border-yellow-200'
+              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+          }`}>
+            {conflictMessage ?? 'Åpen fagpersonavtale — dato ikke bekreftet, kan flyttes automatisk. Åpne oppgaven og sett fast dato for å låse den.'}
+          </p>
+        </div>
       )}
     </div>
   );

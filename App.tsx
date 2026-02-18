@@ -19,7 +19,9 @@ import {
   Layers,
   X,
   ChevronsDownUp,
-  ChevronsUpDown
+  ChevronsUpDown,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import SettingsView from './components/SettingsView';
 import BudgetView from './components/BudgetView';
@@ -102,11 +104,16 @@ interface SortableMilestoneRowProps {
   totalEstimateHours: number;
   onOpenDate: () => void;
   onAddTask: () => void;
+  onRename: (newName: string) => void;
+  onDelete: () => void;
 }
 
 const SortableMilestoneRow: React.FC<SortableMilestoneRowProps> = ({
-  id, label, name, badgeClass, dateRange, totalHours, doneHours, totalEstimateHours, onOpenDate, onAddTask,
+  id, label, name, badgeClass, dateRange, totalHours, doneHours, totalEstimateHours,
+  onOpenDate, onAddTask, onRename, onDelete,
 }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(name);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -114,6 +121,13 @@ const SortableMilestoneRow: React.FC<SortableMilestoneRowProps> = ({
     opacity: isDragging ? 0.5 : 1,
   };
   const pct = totalEstimateHours > 0 ? Math.round((doneHours / totalEstimateHours) * 100) : 0;
+
+  const commitRename = () => {
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== name) onRename(trimmed);
+    else setEditName(name);
+    setIsEditing(false);
+  };
 
   return (
     <div
@@ -135,8 +149,25 @@ const SortableMilestoneRow: React.FC<SortableMilestoneRowProps> = ({
       <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badgeClass}`}>
         {label}
       </span>
-      {/* Name */}
-      <span className="flex-1 min-w-0 truncate text-sm font-semibold text-slate-800">{name}</span>
+      {/* Name — inline editable */}
+      {isEditing ? (
+        <input
+          autoFocus
+          value={editName}
+          onChange={e => setEditName(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') { setEditName(name); setIsEditing(false); } }}
+          className="flex-1 min-w-0 rounded border border-slate-300 px-1.5 py-0.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400"
+        />
+      ) : (
+        <span
+          className="flex-1 min-w-0 truncate text-sm font-semibold text-slate-800 cursor-text"
+          onDoubleClick={() => { setEditName(name); setIsEditing(true); }}
+          title="Dobbeltklikk for å gi nytt navn"
+        >
+          {name}
+        </span>
+      )}
       {/* Progress bar */}
       {totalEstimateHours > 0 && (
         <div className="flex items-center gap-1.5 shrink-0" title={`${doneHours}/${totalEstimateHours}t fullført`}>
@@ -154,6 +185,14 @@ const SortableMilestoneRow: React.FC<SortableMilestoneRowProps> = ({
       <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
+            onClick={() => { setEditName(name); setIsEditing(true); }}
+            className="inline-flex items-center justify-center rounded border border-slate-200 bg-slate-50 p-1 text-slate-500 hover:bg-slate-100"
+            title="Gi nytt navn"
+          >
+            <Pencil size={11} />
+          </button>
+          <button
+            type="button"
             onClick={onOpenDate}
             className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
           >
@@ -166,7 +205,17 @@ const SortableMilestoneRow: React.FC<SortableMilestoneRowProps> = ({
             className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
           >
             <Plus size={11} />
-            Legg til oppgave
+            Legg til
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm(`Slett milepælen "${name}"? Alle oppgavene i den slettes også.`)) onDelete();
+            }}
+            className="inline-flex items-center justify-center rounded border border-red-200 bg-red-50 p-1 text-red-500 hover:bg-red-100"
+            title="Slett milepæl"
+          >
+            <Trash2 size={11} />
           </button>
       </div>
     </div>
@@ -225,6 +274,8 @@ const App: React.FC = () => {
   const [newTaskName, setNewTaskName] = useState('');
   const [newTaskHours, setNewTaskHours] = useState(4);
   const [newTaskAssignee, setNewTaskAssignee] = useState<Assignee>('Meg selv');
+  // When set, the add-task dialog shows a milestone picker and pins to this date
+  const [newTaskHardDate, setNewTaskHardDate] = useState<string>('');
   const [milestoneStartDateInput, setMilestoneStartDateInput] = useState('');
   const [config, setConfig] = useState<ProjectConfig>({
     startDate: new Date(),
@@ -416,6 +467,13 @@ const App: React.FC = () => {
     setActiveTaskForDetail(null);
   }, []);
 
+  const handleDeleteTask = useCallback((taskId: string) => {
+    setMilestones(prev =>
+      prev.map(m => ({ ...m, tasks: m.tasks.filter(t => t.id !== taskId) }))
+    );
+    setActiveTaskForDetail(null);
+  }, []);
+
   const handleUpdateCapacity = (day: number, hours: number) => {
     setConfig(prev => ({
       ...prev,
@@ -460,6 +518,23 @@ const App: React.FC = () => {
     setNewTaskName('');
     setNewTaskHours(4);
     setNewTaskAssignee('Meg selv');
+    setNewTaskHardDate('');
+  };
+
+  const openAddTaskFromWeek = (firstDayOfWeek: Date) => {
+    // Pre-select the milestone whose scheduled range covers this week, or the last milestone
+    const weekStr = format(firstDayOfWeek, 'yyyy-MM-dd');
+    const relevant = milestones.find(m => {
+      const summary = milestoneSummaries.find(s => s.id === m.id);
+      if (!summary?.firstDate || !summary.lastDate) return false;
+      return format(summary.firstDate, 'yyyy-MM-dd') <= weekStr &&
+             format(summary.lastDate, 'yyyy-MM-dd') >= weekStr;
+    });
+    setActiveMilestoneForAdd(relevant?.id ?? milestones[milestones.length - 1]?.id ?? null);
+    setNewTaskName('');
+    setNewTaskHours(4);
+    setNewTaskAssignee('Meg selv');
+    setNewTaskHardDate(format(firstDayOfWeek, 'yyyy-MM-dd'));
   };
 
   const openMilestoneDateDialog = (milestoneId: string) => {
@@ -474,6 +549,10 @@ const App: React.FC = () => {
     const trimmedName = newTaskName.trim();
     if (!trimmedName) return;
 
+    const hardStartDate = newTaskHardDate
+      ? (() => { const [y, m, d] = newTaskHardDate.split('-').map(Number); return new Date(y, m - 1, d); })()
+      : undefined;
+
     const task: Task = {
       id: `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       name: trimmedName,
@@ -481,6 +560,7 @@ const App: React.FC = () => {
       assignee: newTaskAssignee,
       equipment: [],
       completed: false,
+      hardStartDate,
     };
 
     setMilestones((prev) =>
@@ -517,6 +597,16 @@ const App: React.FC = () => {
       return arrayMove(prev, oldIndex, newIndex);
     });
   };
+
+  const handleRenameMilestone = useCallback((milestoneId: string, newName: string) => {
+    setMilestones(prev =>
+      prev.map(m => m.id === milestoneId ? { ...m, name: newName } : m)
+    );
+  }, []);
+
+  const handleDeleteMilestone = useCallback((milestoneId: string) => {
+    setMilestones(prev => prev.filter(m => m.id !== milestoneId));
+  }, []);
 
   const handleTimelineTaskDragStart = (taskId: string, milestoneId: string) => {
     setDraggedTimelineTask({ taskId, milestoneId });
@@ -722,14 +812,15 @@ const App: React.FC = () => {
       {/* MAIN CANVAS: Timeline Visualization */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Top Header */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
-              <LayoutDashboard size={18} />
-              <span>Dashboard</span>
-              <ChevronRight size={14} className="text-slate-300" />
-              <span className="text-slate-900 font-bold">Hovedprosjekt: Bad 2024</span>
+        <header className="bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 h-14 shrink-0">
+          {/* Left: project title (hidden on mobile) + view switcher */}
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-2 text-slate-500 text-sm font-medium">
+              <LayoutDashboard size={16} />
+              <ChevronRight size={12} className="text-slate-300" />
+              <span className="text-slate-900 font-bold text-sm">Bad 2024</span>
             </div>
+            {/* View switcher */}
             <div className="flex items-center gap-1 rounded-md border border-slate-200 p-1">
               <button
                 onClick={() => setActiveView('timeline')}
@@ -747,18 +838,14 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-             <button
-               onClick={() => setIsSidebarOpen(true)}
-               className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"
-               aria-label="Åpne innstillinger"
-             >
-               <Settings2 size={20} />
-             </button>
-             <div className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-semibold border border-slate-200">
-               Live Oppdatering: PÅ
-             </div>
-          </div>
+          {/* Right: settings */}
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"
+            aria-label="Åpne innstillinger"
+          >
+            <Settings2 size={20} />
+          </button>
         </header>
 
         {/* Scrollable Content */}
@@ -834,8 +921,18 @@ const App: React.FC = () => {
                             </span>
                           ))}
                         </div>
-                        <div className={`p-0.5 rounded-full bg-slate-200 text-slate-500 transition-transform duration-300 ${isCollapsed ? '-rotate-90' : ''}`}>
-                          <ChevronDown size={14} />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); openAddTaskFromWeek(group.days[0].date); }}
+                            className="inline-flex items-center justify-center h-6 w-6 rounded border border-slate-200 bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+                            title="Legg til oppgave i denne uken"
+                          >
+                            <Plus size={13} />
+                          </button>
+                          <div className={`p-0.5 rounded-full bg-slate-200 text-slate-500 transition-transform duration-300 ${isCollapsed ? '-rotate-90' : ''}`}>
+                            <ChevronDown size={14} />
+                          </div>
                         </div>
                       </div>
 
@@ -1043,17 +1140,17 @@ const App: React.FC = () => {
           <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white shadow-xl">
             <div className="border-b border-slate-200 px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Ny oppgave</p>
-              <h3 className="text-sm font-semibold text-slate-900">
-                {milestoneById.get(activeMilestoneForAdd)?.milestone.name}
-              </h3>
             </div>
             <div className="space-y-3 p-4">
+              {/* Task name */}
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-500">Oppgavenavn</label>
                 <input
+                  autoFocus
                   type="text"
                   value={newTaskName}
                   onChange={(e) => setNewTaskName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddTask(); }}
                   className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
                   placeholder="Eks: Montere servant"
                 />
@@ -1076,17 +1173,38 @@ const App: React.FC = () => {
                     onChange={(e) => setNewTaskAssignee(e.target.value as Assignee)}
                     className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
                   >
-                    {assignees.map((assignee) => (
-                      <option key={assignee} value={assignee}>
-                        {assignee}
-                      </option>
-                    ))}
+                    {assignees.map((a) => <option key={a} value={a}>{a}</option>)}
                   </select>
                 </div>
               </div>
-              <p className="text-[11px] text-slate-500">
-                Ny oppgave legges inn forst i valgt milepael. Deretter kan du dra den til riktig plassering.
-              </p>
+              {/* Milestone picker */}
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-500">Milepæl</label>
+                <select
+                  value={activeMilestoneForAdd}
+                  onChange={(e) => setActiveMilestoneForAdd(e.target.value)}
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
+                  {milestones.map((m, i) => (
+                    <option key={m.id} value={m.id}>M{i + 1} — {m.name}</option>
+                  ))}
+                </select>
+              </div>
+              {/* Start date (only shown when triggered from week) */}
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-500">
+                  Startdato
+                  {!newTaskHardDate && (
+                    <span className="ml-1 font-normal text-slate-400">(valgfri — låser oppgaven til dato)</span>
+                  )}
+                </label>
+                <input
+                  type="date"
+                  value={newTaskHardDate}
+                  onChange={(e) => setNewTaskHardDate(e.target.value)}
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                />
+              </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
               <button
@@ -1099,7 +1217,8 @@ const App: React.FC = () => {
               <button
                 type="button"
                 onClick={handleAddTask}
-                className="rounded bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-900"
+                disabled={!newTaskName.trim()}
+                className="rounded bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-900 disabled:opacity-40"
               >
                 Legg til
               </button>
@@ -1202,6 +1321,8 @@ const App: React.FC = () => {
                         totalEstimateHours={m.totalEstimateHours}
                         onOpenDate={() => { setIsMilestoneManagerOpen(false); openMilestoneDateDialog(m.id); }}
                         onAddTask={() => { setIsMilestoneManagerOpen(false); openAddTaskDialog(m.id); }}
+                        onRename={(newName) => handleRenameMilestone(m.id, newName)}
+                        onDelete={() => handleDeleteMilestone(m.id)}
                       />
                     );
                   })}
@@ -1228,6 +1349,7 @@ const App: React.FC = () => {
             conflictingAppointmentTime={taskMetaMap[task.id]?.conflictingAppointmentTime}
             pinnedHasNoTime={taskMetaMap[task.id]?.pinnedHasNoTime ?? false}
             onSave={handleUpdateTask}
+            onDelete={() => handleDeleteTask(task.id)}
             onClose={() => setActiveTaskForDetail(null)}
           />
         );

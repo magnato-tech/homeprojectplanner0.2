@@ -1,5 +1,5 @@
 
-import { Assignee, Milestone } from './types';
+import { Assignee, Milestone, Project } from './types';
 
 export const INITIAL_MILESTONES: Milestone[] = [
   {
@@ -421,4 +421,38 @@ export const DEFAULT_LABOR_RATES: Record<Assignee, number> = {
   'Rørlegger': 1200,
   'Elektriker': 1250,
   'Maler': 850,
+};
+
+export const createNewProject = (name: string): Project => {
+  const now = new Date();
+  const ts = Date.now().toString(36);
+  return {
+    id: `p-${ts}-${Math.random().toString(36).slice(2, 6)}`,
+    name: name.trim() || 'Nytt prosjekt',
+    createdAt: now.toISOString(),
+    milestones: [
+      {
+        id: `m-${ts}-a`,
+        name: 'Milepæl 1',
+        tasks: [
+          {
+            id: `t-${ts}-a`,
+            name: 'Min første oppgave',
+            estimateHours: 4,
+            assignee: 'Meg selv',
+            equipment: [],
+            completed: false,
+          },
+        ],
+      },
+    ],
+    config: {
+      startDate: now,
+      dayCapacities: DEFAULT_CAPACITIES,
+      defaultTaskHours: 4,
+      newTaskPosition: 'last',
+    },
+    laborRates: DEFAULT_LABOR_RATES,
+    actualCosts: { labor: 0, material: 0, rental: 0 },
+  };
 };

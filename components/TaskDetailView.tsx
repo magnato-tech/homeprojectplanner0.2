@@ -3,6 +3,11 @@ import { X, Plus, Trash2, ChevronDown, Lock, LockOpen, AlertTriangle } from 'luc
 import { format } from 'date-fns';
 import { Task, Assignee, EquipmentItem, EquipmentCategory } from '../types';
 
+interface MilestoneOption {
+  id: string;
+  label: string;
+}
+
 interface TaskDetailViewProps {
   task: Task;
   milestoneName: string;
@@ -12,6 +17,13 @@ interface TaskDetailViewProps {
   isTimedConflict?: boolean;
   conflictingAppointmentTime?: string;
   pinnedHasNoTime?: boolean;
+  /** When true: "create" mode — hides delete button, changes save label */
+  isCreateMode?: boolean;
+  /** Available milestones for the milestone selector (create mode only) */
+  milestoneOptions?: MilestoneOption[];
+  /** Currently selected milestone in create mode */
+  selectedMilestoneId?: string;
+  onMilestoneChange?: (id: string) => void;
   onSave: (updatedTask: Task) => void;
   onDelete: () => void;
   onClose: () => void;
@@ -56,6 +68,10 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
   isTimedConflict = false,
   conflictingAppointmentTime,
   pinnedHasNoTime = false,
+  isCreateMode = false,
+  milestoneOptions,
+  selectedMilestoneId,
+  onMilestoneChange,
   onSave,
   onDelete,
   onClose,
@@ -111,7 +127,7 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
     onSave({
       ...task,
       name: name.trim() || task.name,
-      estimateHours: Math.max(1, estimateHours),
+      estimateHours: Math.max(0, estimateHours),
       assignee,
       completed,
       startTime: startTime || undefined,
@@ -136,13 +152,28 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
         {/* Header */}
         <div className="flex items-start justify-between border-b border-slate-200 px-4 py-3 sm:px-5">
           <div className="min-w-0 flex-1 pr-4">
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              {milestoneName}
-            </p>
+            {/* In create mode: show editable milestone selector; otherwise static label */}
+            {isCreateMode && milestoneOptions && onMilestoneChange ? (
+              <select
+                value={selectedMilestoneId}
+                onChange={e => onMilestoneChange(e.target.value)}
+                className="mb-1.5 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-300"
+              >
+                {milestoneOptions.map(m => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+            ) : (
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                {milestoneName}
+              </p>
+            )}
             <input
+              autoFocus={isCreateMode}
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && isCreateMode && name.trim()) handleSave(); }}
               className="w-full border-0 p-0 text-base font-semibold text-slate-900 placeholder-slate-300 focus:outline-none focus:ring-0"
               placeholder="Oppgavenavn"
             />
@@ -201,14 +232,25 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-[11px] font-semibold text-slate-500">Estimat (timer)</label>
+                <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+                  Estimat (timer)
+                  {estimateHours === 0 && (
+                    <span className="ml-1.5 font-normal text-slate-400 normal-case">= gjøremål</span>
+                  )}
+                </label>
                 <input
                   type="number"
-                  min="1"
+                  min="0"
+                  step="1"
                   value={estimateHours}
-                  onChange={e => setEstimateHours(parseInt(e.target.value) || 1)}
+                  onChange={e => setEstimateHours(Math.max(0, parseInt(e.target.value) || 0))}
                   className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
                 />
+                {estimateHours === 0 && (
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    Vises i tidslinje uten å bruke kapasitet — passer for handlinger som ikke tar tid.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-[11px] font-semibold text-slate-500">Starter kl.</label>
@@ -541,16 +583,20 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-3 sm:px-5">
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm(`Slett "${task.name}"? Dette kan ikke angres.`)) onDelete();
-            }}
-            className="inline-flex items-center gap-1.5 rounded border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
-          >
-            <Trash2 size={12} />
-            Slett oppgave
-          </button>
+          {isCreateMode ? (
+            <span />
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(`Slett "${task.name}"? Dette kan ikke angres.`)) onDelete();
+              }}
+              className="inline-flex items-center gap-1.5 rounded border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+            >
+              <Trash2 size={12} />
+              Slett oppgave
+            </button>
+          )}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -562,9 +608,10 @@ const TaskDetailView: React.FC<TaskDetailViewProps> = ({
             <button
               type="button"
               onClick={handleSave}
-              className="rounded bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
+              disabled={isCreateMode && !name.trim()}
+              className="rounded bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-40"
             >
-              Lagre
+              {isCreateMode ? 'Legg til oppgave' : 'Lagre'}
             </button>
           </div>
         </div>

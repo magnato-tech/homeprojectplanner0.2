@@ -66,6 +66,29 @@ export const calculateSchedule = (
       let partIndex = 1;
       const taskPartsRefs: TaskPart[] = [];
 
+      // --- GJØREMÅL: 0-timersoppgave — plasser som markør, ingen kapasitetsbruk ---
+      if (task.estimateHours === 0) {
+        const targetDate = task.hardStartDate ? startOfDay(task.hardStartDate) : new Date(currentDate);
+        let markerDay = schedule.find(d => isSameDay(d.date, targetDate));
+        if (!markerDay) {
+          const cap = config.dayCapacities[targetDate.getDay()] ?? 0;
+          markerDay = { date: new Date(targetDate), parts: [], remainingCapacity: cap, totalCapacity: cap };
+          schedule.push(markerDay);
+        }
+        markerDay.parts.push({
+          taskId: task.id,
+          taskName: task.name,
+          assignee: task.assignee,
+          equipment: task.equipment,
+          hoursSpent: 0,
+          partIndex: 1,
+          totalParts: 1,
+          milestoneName: milestone.name,
+          milestoneId: milestone.id,
+        });
+        continue;
+      }
+
       // --- PINNED TASK: jump directly to hardStartDate ---
       if (task.hardStartDate) {
         const pinned = startOfDay(task.hardStartDate);

@@ -52,10 +52,22 @@ export interface DaySchedule {
 export interface ProjectConfig {
   startDate: Date;
   dayCapacities: Record<number, number>; // 0 (Sun) to 6 (Sat)
+  defaultTaskHours: number;
+  newTaskPosition: 'first' | 'last';
 }
 
 export interface BudgetActuals {
   labor: number;
   material: number;
   rental: number;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: string;
+  milestones: Milestone[];
+  config: ProjectConfig;
+  laborRates: Record<string, number>;
+  actualCosts: BudgetActuals;
 }

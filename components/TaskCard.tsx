@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Clock, GripVertical, Lock, LockOpen, AlertTriangle } from 'lucide-react';
+import { Clock, GripVertical, Lock, LockOpen, AlertTriangle, CheckSquare } from 'lucide-react';
 import { TaskPart, Assignee } from '../types';
 
 interface TaskCardProps {
@@ -172,21 +172,28 @@ const TaskCard: React.FC<TaskCardProps> = ({
         </select>
 
         {/* Hours today — desktop only */}
-        <span className="hidden sm:flex shrink-0 items-center gap-1 text-[11px] font-medium text-slate-500">
-          <Clock size={11} className="opacity-50" />
-          {part.hoursSpent}t
-        </span>
+        {part.hoursSpent === 0 ? (
+          <span className="hidden sm:flex shrink-0 items-center gap-1 text-[11px] font-medium text-slate-400 italic">
+            <CheckSquare size={11} className="text-slate-400" />
+            Gjøremål
+          </span>
+        ) : (
+          <span className="hidden sm:flex shrink-0 items-center gap-1 text-[11px] font-medium text-slate-500">
+            <Clock size={11} className="opacity-50" />
+            {part.hoursSpent}t
+          </span>
+        )}
 
         {/* Estimate input — desktop only, first part */}
         {part.partIndex === 1 && (
           <div className="hidden sm:flex shrink-0 items-center gap-1">
             <input
               type="number"
-              min="1"
+              min="0"
               value={currentEstimate}
               onChange={(e) => onEstimateChange(part.taskId, parseInt(e.target.value) || 0)}
               className="w-12 px-1.5 py-0.5 text-[11px] font-semibold bg-white border border-slate-300 rounded focus:ring-1 focus:ring-slate-300 focus:outline-none text-center"
-              title="Totalt estimat (timer)"
+              title="Totalt estimat (timer) — 0 = gjøremål"
             />
             <span className="text-[11px] text-slate-400">t tot</span>
           </div>
@@ -247,16 +254,23 @@ const TaskCard: React.FC<TaskCardProps> = ({
           ))}
         </select>
 
-        <span className="flex items-center gap-0.5 text-[11px] text-slate-400">
-          <Clock size={10} className="opacity-60" />
-          {part.hoursSpent}t i dag
-        </span>
+        {part.hoursSpent === 0 ? (
+          <span className="flex items-center gap-0.5 text-[11px] text-slate-400 italic">
+            <CheckSquare size={10} />
+            Gjøremål
+          </span>
+        ) : (
+          <span className="flex items-center gap-0.5 text-[11px] text-slate-400">
+            <Clock size={10} className="opacity-60" />
+            {part.hoursSpent}t i dag
+          </span>
+        )}
 
         {part.partIndex === 1 && (
           <div className="flex items-center gap-1 ml-auto">
             <input
               type="number"
-              min="1"
+              min="0"
               value={currentEstimate}
               onChange={(e) => onEstimateChange(part.taskId, parseInt(e.target.value) || 0)}
               className="w-14 px-2 py-1 text-xs font-semibold bg-white border border-slate-300 rounded focus:ring-1 focus:ring-slate-300 focus:outline-none text-center"

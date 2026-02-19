@@ -8,7 +8,6 @@ import { CSS } from '@dnd-kit/utilities';
 import { 
   Hammer, 
   Settings2, 
-  LayoutDashboard, 
   Calculator,
   Clock, 
   ChevronRight,
@@ -21,25 +20,21 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Pencil,
-  Trash2
+  Trash2,
+  ChevronLeft
 } from 'lucide-react';
 import SettingsView from './components/SettingsView';
 import BudgetView from './components/BudgetView';
-import { Assignee, BudgetActuals, Milestone, ProjectConfig, DaySchedule, Task } from './types';
-import { INITIAL_MILESTONES, DEFAULT_CAPACITIES, DEFAULT_LABOR_RATES } from './constants';
+import { Assignee, BudgetActuals, Milestone, ProjectConfig, DaySchedule, Task, Project } from './types';
+import { INITIAL_MILESTONES, DEFAULT_CAPACITIES, DEFAULT_LABOR_RATES, createNewProject } from './constants';
+import DashboardView from './components/DashboardView';
 import { calculateSchedule } from './services/scheduler';
 import { detectConflicts } from './services/conflictDetector';
 import TaskCard from './components/TaskCard';
 import TaskDetailView from './components/TaskDetailView';
 
-const LOCAL_STORAGE_KEY = 'home-project-planner:v1';
-
-interface PersistedAppState {
-  milestones: Milestone[];
-  config: ProjectConfig;
-  laborRates: Record<string, number>;
-  actualCosts: BudgetActuals;
-}
+const LOCAL_STORAGE_KEY = 'home-project-planner:v1'; // legacy key for migration
+const PROJECTS_KEY = 'home-project-planner:projects:v1';
 
 const parseDateOrUndefined = (value: unknown): Date | undefined => {
   if (!value || typeof value !== 'string') return undefined;
@@ -53,7 +48,7 @@ const parseDateOrDefault = (value: unknown, fallback: Date): Date => {
 };
 
 const normalizeMilestonesFromStorage = (value: unknown): Milestone[] => {
-  if (!Array.isArray(value)) return INITIAL_MILESTONES;
+  if (!Array.isArray(value)) return [];
   return value.map((milestone): Milestone => {
     const safeMilestone = (milestone ?? {}) as Milestone;
     return {
@@ -66,6 +61,27 @@ const normalizeMilestonesFromStorage = (value: unknown): Milestone[] => {
           }))
         : [],
     };
+  });
+};
+
+const normalizeProjectsFromStorage = (value: unknown): Project[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map((p: unknown) => {
+    const proj = ((p ?? {}) as Partial<Project>);
+    return {
+      id: proj.id ?? `p-${Date.now().toString(36)}`,
+      name: proj.name ?? 'Prosjekt',
+      createdAt: proj.createdAt ?? new Date().toISOString(),
+      milestones: normalizeMilestonesFromStorage(proj.milestones),
+      config: {
+        startDate: parseDateOrDefault((proj.config as { startDate?: unknown } | undefined)?.startDate, new Date()),
+        dayCapacities: (proj.config as { dayCapacities?: Record<number, number> } | undefined)?.dayCapacities ?? DEFAULT_CAPACITIES,
+        defaultTaskHours: (proj.config as { defaultTaskHours?: number } | undefined)?.defaultTaskHours ?? 4,
+        newTaskPosition: (proj.config as { newTaskPosition?: 'first' | 'last' } | undefined)?.newTaskPosition ?? 'last',
+      },
+      laborRates: (proj.laborRates as Record<string, number>) ?? DEFAULT_LABOR_RATES,
+      actualCosts: proj.actualCosts ?? { labor: 0, material: 0, rental: 0 },
+    } as Project;
   });
 };
 
@@ -253,79 +269,121 @@ const MilestoneSeparator: React.FC<MilestoneSeparatorProps> = ({ label, name, ba
 };
 
 const App: React.FC = () => {
-  const [milestones, setMilestones] = useState<Milestone[]>(INITIAL_MILESTONES);
+  // ── Multi-project state ──────────────────────────────────────────────────
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [isStorageHydrated, setIsStorageHydrated] = useState(false);
+
+  // Derived: active project data
+  const activeProject = useMemo(
+    () => projects.find(p => p.id === activeProjectId) ?? null,
+    [projects, activeProjectId]
+  );
+  const milestones: Milestone[] = activeProject?.milestones ?? [];
+  const config: ProjectConfig = activeProject?.config ?? { startDate: new Date(), dayCapacities: DEFAULT_CAPACITIES, defaultTaskHours: 4, newTaskPosition: 'last' };
+  const laborRates: Record<Assignee, number> = (activeProject?.laborRates ?? DEFAULT_LABOR_RATES) as Record<Assignee, number>;
+  const actualCosts: BudgetActuals = activeProject?.actualCosts ?? { labor: 0, material: 0, rental: 0 };
+
+  // Keep a ref to always have the current activeProjectId inside stable callbacks
+  const activeProjectIdRef = React.useRef(activeProjectId);
+  useEffect(() => { activeProjectIdRef.current = activeProjectId; }, [activeProjectId]);
+
+  // Wrapper setters — stable (empty deps), use ref so stale closures always hit the right project
+  const setMilestones = useCallback((fn: Milestone[] | ((prev: Milestone[]) => Milestone[])) => {
+    const pid = activeProjectIdRef.current;
+    setProjects(prev => prev.map(p => {
+      if (p.id !== pid) return p;
+      return { ...p, milestones: typeof fn === 'function' ? fn(p.milestones) : fn };
+    }));
+  }, []);
+
+  const setConfig = useCallback((fn: ProjectConfig | ((prev: ProjectConfig) => ProjectConfig)) => {
+    const pid = activeProjectIdRef.current;
+    setProjects(prev => prev.map(p => {
+      if (p.id !== pid) return p;
+      return { ...p, config: typeof fn === 'function' ? fn(p.config) : fn };
+    }));
+  }, []);
+
+  const setLaborRates = useCallback((fn: Record<Assignee, number> | ((prev: Record<Assignee, number>) => Record<Assignee, number>)) => {
+    const pid = activeProjectIdRef.current;
+    setProjects(prev => prev.map(p => {
+      if (p.id !== pid) return p;
+      const cur = (p.laborRates ?? DEFAULT_LABOR_RATES) as Record<Assignee, number>;
+      return { ...p, laborRates: typeof fn === 'function' ? fn(cur) : fn };
+    }));
+  }, []);
+
+  const setActualCosts = useCallback((fn: BudgetActuals | ((prev: BudgetActuals) => BudgetActuals)) => {
+    const pid = activeProjectIdRef.current;
+    setProjects(prev => prev.map(p => {
+      if (p.id !== pid) return p;
+      const cur = p.actualCosts ?? { labor: 0, material: 0, rental: 0 };
+      return { ...p, actualCosts: typeof fn === 'function' ? fn(cur) : fn };
+    }));
+  }, []);
+
+  // ── UI state ─────────────────────────────────────────────────────────────
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(new Set());
   const [activeTaskForDetail, setActiveTaskForDetail] = useState<{ taskId: string; milestoneId: string } | null>(null);
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMilestoneManagerOpen, setIsMilestoneManagerOpen] = useState(false);
   const [activeView, setActiveView] = useState<'timeline' | 'budget'>('timeline');
-  const [laborRates, setLaborRates] = useState<Record<Assignee, number>>(DEFAULT_LABOR_RATES);
-  const [actualCosts, setActualCosts] = useState<BudgetActuals>({
-    labor: 0,
-    material: 0,
-    rental: 0,
-  });
-  const [isStorageHydrated, setIsStorageHydrated] = useState(false);
   const [activeMilestoneForAdd, setActiveMilestoneForAdd] = useState<string | null>(null);
+  const [newTaskDraft, setNewTaskDraft] = useState<Task | null>(null);
+  const [newTaskSuggestedDate, setNewTaskSuggestedDate] = useState<Date | undefined>(undefined);
   const [activeMilestoneForDate, setActiveMilestoneForDate] = useState<string | null>(null);
   const [draggedTimelineTask, setDraggedTimelineTask] = useState<{ taskId: string; milestoneId: string } | null>(null);
   const [timelineDropTarget, setTimelineDropTarget] = useState<{ taskId: string; position: 'before' | 'after' } | null>(null);
-  const [newTaskName, setNewTaskName] = useState('');
-  const [newTaskHours, setNewTaskHours] = useState(4);
-  const [newTaskAssignee, setNewTaskAssignee] = useState<Assignee>('Meg selv');
-  // When set, the add-task dialog shows a milestone picker and pins to this date
-  const [newTaskHardDate, setNewTaskHardDate] = useState<string>('');
   const [milestoneStartDateInput, setMilestoneStartDateInput] = useState('');
-  const [config, setConfig] = useState<ProjectConfig>({
-    startDate: new Date(),
-    dayCapacities: DEFAULT_CAPACITIES,
-  });
 
+  // Load projects from localStorage (with migration from v1)
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (!raw) {
+      const newRaw = window.localStorage.getItem(PROJECTS_KEY);
+      if (newRaw) {
+        const parsed = normalizeProjectsFromStorage(JSON.parse(newRaw));
+        setProjects(parsed);
         setIsStorageHydrated(true);
         return;
       }
-      const parsed = JSON.parse(raw) as Partial<PersistedAppState>;
-      if (parsed.milestones) {
-        setMilestones(normalizeMilestonesFromStorage(parsed.milestones));
-      }
-      if (parsed.config) {
-        setConfig({
-          startDate: parseDateOrDefault(parsed.config.startDate, new Date()),
-          dayCapacities: parsed.config.dayCapacities ?? DEFAULT_CAPACITIES,
-        });
-      }
-      if (parsed.laborRates) {
-        setLaborRates((parsed.laborRates as Record<Assignee, number>) ?? DEFAULT_LABOR_RATES);
-      }
-      if (parsed.actualCosts) {
-        setActualCosts(parsed.actualCosts);
+      // Migrate old v1 single-project data
+      const oldRaw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (oldRaw) {
+        const parsed = JSON.parse(oldRaw) as { milestones?: unknown; config?: { startDate?: unknown; dayCapacities?: Record<number, number> }; laborRates?: unknown; actualCosts?: BudgetActuals };
+        const migrated: Project = {
+          id: 'p-migrated',
+          name: 'Bad 2024',
+          createdAt: new Date().toISOString(),
+          milestones: normalizeMilestonesFromStorage(parsed.milestones ?? INITIAL_MILESTONES),
+          config: {
+            startDate: parseDateOrDefault(parsed.config?.startDate, new Date()),
+            dayCapacities: parsed.config?.dayCapacities ?? DEFAULT_CAPACITIES,
+            defaultTaskHours: 4,
+            newTaskPosition: 'last',
+          },
+          laborRates: (parsed.laborRates as Record<string, number>) ?? DEFAULT_LABOR_RATES,
+          actualCosts: parsed.actualCosts ?? { labor: 0, material: 0, rental: 0 },
+        };
+        setProjects([migrated]);
       }
     } catch {
-      // Ignore broken localStorage payload and continue with defaults.
+      // Ignore broken data
     } finally {
       setIsStorageHydrated(true);
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Save all projects to localStorage
   useEffect(() => {
     if (!isStorageHydrated) return;
-    const payload: PersistedAppState = {
-      milestones,
-      config,
-      laborRates,
-      actualCosts,
-    };
     try {
-      window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
+      window.localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
     } catch {
-      // Ignore storage quota/availability errors.
+      // Ignore storage quota errors
     }
-  }, [milestones, config, laborRates, actualCosts, isStorageHydrated]);
+  }, [projects, isStorageHydrated]);
 
   const assignees: Assignee[] = ['Meg selv', 'Snekker', 'Rørlegger', 'Elektriker', 'Maler'];
   const milestoneById = useMemo(
@@ -484,6 +542,14 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleUpdateDefaultTaskHours = (hours: number) => {
+    setConfig(prev => ({ ...prev, defaultTaskHours: Math.max(0, hours) }));
+  };
+
+  const handleUpdateNewTaskPosition = (pos: 'first' | 'last') => {
+    setConfig(prev => ({ ...prev, newTaskPosition: pos }));
+  };
+
   const handleResetStoredData = useCallback(() => {
     const firstConfirm = window.confirm(
       'Advarsel: Dette vil slette alle lagrede prosjektdata i nettleseren. Vil du fortsette?'
@@ -495,34 +561,40 @@ const App: React.FC = () => {
     );
     if (!secondConfirm) return;
 
-    setMilestones(INITIAL_MILESTONES);
-    setConfig({
-      startDate: new Date(),
-      dayCapacities: DEFAULT_CAPACITIES,
-    });
-    setLaborRates(DEFAULT_LABOR_RATES);
-    setActualCosts({
-      labor: 0,
-      material: 0,
-      rental: 0,
-    });
+    // Reset current project to a blank slate
+    if (activeProjectId) {
+      setProjects(prev => prev.map(p => p.id !== activeProjectId ? p : {
+        ...p,
+        milestones: [],
+        config: { startDate: new Date(), dayCapacities: DEFAULT_CAPACITIES, defaultTaskHours: 4, newTaskPosition: 'last' },
+        laborRates: DEFAULT_LABOR_RATES,
+        actualCosts: { labor: 0, material: 0, rental: 0 },
+      }));
+    }
     try {
       window.localStorage.removeItem(LOCAL_STORAGE_KEY);
     } catch {
       // Ignore storage errors.
     }
-  }, []);
+  }, [activeProjectId]);
+
+  const makeBlankTask = (hardStartDate?: Date): Task => ({
+    id: `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    name: '',
+    estimateHours: config.defaultTaskHours ?? 4,
+    assignee: 'Meg selv',
+    equipment: [],
+    completed: false,
+    hardStartDate,
+  });
 
   const openAddTaskDialog = (milestoneId: string) => {
     setActiveMilestoneForAdd(milestoneId);
-    setNewTaskName('');
-    setNewTaskHours(4);
-    setNewTaskAssignee('Meg selv');
-    setNewTaskHardDate('');
+    setNewTaskDraft(makeBlankTask());
+    setNewTaskSuggestedDate(undefined);
   };
 
   const openAddTaskFromWeek = (firstDayOfWeek: Date) => {
-    // Pre-select the milestone whose scheduled range covers this week, or the last milestone
     const weekStr = format(firstDayOfWeek, 'yyyy-MM-dd');
     const relevant = milestones.find(m => {
       const summary = milestoneSummaries.find(s => s.id === m.id);
@@ -530,11 +602,25 @@ const App: React.FC = () => {
       return format(summary.firstDate, 'yyyy-MM-dd') <= weekStr &&
              format(summary.lastDate, 'yyyy-MM-dd') >= weekStr;
     });
-    setActiveMilestoneForAdd(relevant?.id ?? milestones[milestones.length - 1]?.id ?? null);
-    setNewTaskName('');
-    setNewTaskHours(4);
-    setNewTaskAssignee('Meg selv');
-    setNewTaskHardDate(format(firstDayOfWeek, 'yyyy-MM-dd'));
+    const targetMilestoneId = relevant?.id ?? milestones[milestones.length - 1]?.id ?? null;
+    setActiveMilestoneForAdd(targetMilestoneId);
+    // Blank task — date is a suggestion only (not locked), user must check "Fast avtale" to lock
+    setNewTaskDraft(makeBlankTask());
+    setNewTaskSuggestedDate(firstDayOfWeek);
+  };
+
+  const handleAddTask = (savedTask: Task) => {
+    if (!activeMilestoneForAdd) return;
+    const addFirst = (config.newTaskPosition ?? 'last') === 'first';
+    setMilestones((prev) =>
+      prev.map((milestone) =>
+        milestone.id === activeMilestoneForAdd
+          ? { ...milestone, tasks: addFirst ? [savedTask, ...milestone.tasks] : [...milestone.tasks, savedTask] }
+          : milestone
+      )
+    );
+    setActiveMilestoneForAdd(null);
+    setNewTaskDraft(null);
   };
 
   const openMilestoneDateDialog = (milestoneId: string) => {
@@ -542,35 +628,6 @@ const App: React.FC = () => {
     const inputValue = selected?.startDate ? format(selected.startDate, 'yyyy-MM-dd') : '';
     setMilestoneStartDateInput(inputValue);
     setActiveMilestoneForDate(milestoneId);
-  };
-
-  const handleAddTask = () => {
-    if (!activeMilestoneForAdd) return;
-    const trimmedName = newTaskName.trim();
-    if (!trimmedName) return;
-
-    const hardStartDate = newTaskHardDate
-      ? (() => { const [y, m, d] = newTaskHardDate.split('-').map(Number); return new Date(y, m - 1, d); })()
-      : undefined;
-
-    const task: Task = {
-      id: `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      name: trimmedName,
-      estimateHours: Math.max(1, newTaskHours),
-      assignee: newTaskAssignee,
-      equipment: [],
-      completed: false,
-      hardStartDate,
-    };
-
-    setMilestones((prev) =>
-      prev.map((milestone) =>
-        milestone.id === activeMilestoneForAdd
-          ? { ...milestone, tasks: [task, ...milestone.tasks] }
-          : milestone
-      )
-    );
-    setActiveMilestoneForAdd(null);
   };
 
   const handleSaveMilestoneStartDate = () => {
@@ -790,6 +847,31 @@ const App: React.FC = () => {
     return map;
   }, [schedule, milestones, config]);
 
+  // Show dashboard when no project is active
+  if (!activeProjectId) {
+    return (
+      <DashboardView
+        projects={projects}
+        onOpenProject={(id) => {
+          setActiveProjectId(id);
+          setCollapsedWeeks(new Set());
+          setExpandedDays(new Set());
+          setActiveView('timeline');
+        }}
+        onCreateProject={(name) => {
+          const p = createNewProject(name);
+          setProjects(prev => [...prev, p]);
+          setActiveProjectId(p.id);
+          setCollapsedWeeks(new Set());
+          setExpandedDays(new Set());
+          setActiveView('timeline');
+        }}
+        onDeleteProject={(id) => setProjects(prev => prev.filter(p => p.id !== id))}
+        onRenameProject={(id, name) => setProjects(prev => prev.map(p => p.id === id ? { ...p, name } : p))}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row">
       {/* LEFT SIDEBAR: Functionality & Logic Controls */}
@@ -815,6 +897,8 @@ const App: React.FC = () => {
             config={config}
             onUpdateStartDate={(date) => setConfig(prev => ({ ...prev, startDate: date }))}
             onUpdateCapacity={handleUpdateCapacity}
+            onUpdateDefaultTaskHours={handleUpdateDefaultTaskHours}
+            onUpdateNewTaskPosition={handleUpdateNewTaskPosition}
             scheduleLength={schedule.length}
             lastScheduleDate={schedule.length > 0 ? schedule[schedule.length - 1].date : null}
             onResetStoredData={handleResetStoredData}
@@ -826,13 +910,21 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Top Header */}
         <header className="bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 h-14 shrink-0">
-          {/* Left: project title (hidden on mobile) + view switcher */}
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 text-slate-500 text-sm font-medium">
-              <LayoutDashboard size={16} />
-              <ChevronRight size={12} className="text-slate-300" />
-              <span className="text-slate-900 font-bold text-sm">Bad 2024</span>
-            </div>
+          {/* Left: back button + project name + view switcher */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setActiveProjectId(null)}
+              className="flex items-center gap-1 text-slate-400 hover:text-slate-700 text-xs font-medium shrink-0"
+              title="Tilbake til prosjektliste"
+            >
+              <ChevronLeft size={15} />
+              <span className="hidden sm:inline">Prosjekter</span>
+            </button>
+            <span className="hidden sm:block text-slate-200 text-sm">|</span>
+            <span className="hidden sm:block font-bold text-sm text-slate-800 truncate max-w-[160px]">
+              {activeProject?.name ?? ''}
+            </span>
             {/* View switcher */}
             <div className="flex items-center gap-1 rounded-md border border-slate-200 p-1">
               <button
@@ -1148,96 +1240,20 @@ const App: React.FC = () => {
           </div>
       </main>
 
-      {activeMilestoneForAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3">
-          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white shadow-xl">
-            <div className="border-b border-slate-200 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Ny oppgave</p>
-            </div>
-            <div className="space-y-3 p-4">
-              {/* Task name */}
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-500">Oppgavenavn</label>
-                <input
-                  autoFocus
-                  type="text"
-                  value={newTaskName}
-                  onChange={(e) => setNewTaskName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddTask(); }}
-                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
-                  placeholder="Eks: Montere servant"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-500">Estimat (timer)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={newTaskHours}
-                    onChange={(e) => setNewTaskHours(parseInt(e.target.value, 10) || 1)}
-                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-500">Ansvarlig</label>
-                  <select
-                    value={newTaskAssignee}
-                    onChange={(e) => setNewTaskAssignee(e.target.value as Assignee)}
-                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
-                  >
-                    {assignees.map((a) => <option key={a} value={a}>{a}</option>)}
-                  </select>
-                </div>
-              </div>
-              {/* Milestone picker */}
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-500">Milepæl</label>
-                <select
-                  value={activeMilestoneForAdd}
-                  onChange={(e) => setActiveMilestoneForAdd(e.target.value)}
-                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
-                >
-                  {milestones.map((m, i) => (
-                    <option key={m.id} value={m.id}>M{i + 1} — {m.name}</option>
-                  ))}
-                </select>
-              </div>
-              {/* Start date (only shown when triggered from week) */}
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-500">
-                  Startdato
-                  {!newTaskHardDate && (
-                    <span className="ml-1 font-normal text-slate-400">(valgfri — låser oppgaven til dato)</span>
-                  )}
-                </label>
-                <input
-                  type="date"
-                  value={newTaskHardDate}
-                  onChange={(e) => setNewTaskHardDate(e.target.value)}
-                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
-              <button
-                type="button"
-                onClick={() => setActiveMilestoneForAdd(null)}
-                className="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
-              >
-                Avbryt
-              </button>
-              <button
-                type="button"
-                onClick={handleAddTask}
-                disabled={!newTaskName.trim()}
-                className="rounded bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-900 disabled:opacity-40"
-              >
-                Legg til
-              </button>
-            </div>
-          </div>
-        </div>
+      {activeMilestoneForAdd && newTaskDraft && (
+        <TaskDetailView
+          task={newTaskDraft}
+          milestoneName={milestoneById.get(activeMilestoneForAdd)?.milestone.name ?? 'Ny oppgave'}
+          assigneeOptions={assignees}
+          scheduledDate={newTaskSuggestedDate}
+          isCreateMode
+          milestoneOptions={milestones.map((m, i) => ({ id: m.id, label: `M${i + 1} — ${m.name}` }))}
+          selectedMilestoneId={activeMilestoneForAdd}
+          onMilestoneChange={(id) => setActiveMilestoneForAdd(id)}
+          onSave={handleAddTask}
+          onDelete={() => { setActiveMilestoneForAdd(null); setNewTaskDraft(null); }}
+          onClose={() => { setActiveMilestoneForAdd(null); setNewTaskDraft(null); }}
+        />
       )}
 
       {activeMilestoneForDate && (
